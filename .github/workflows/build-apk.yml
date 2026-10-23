@@ -1,0 +1,229 @@
+name: Android APK derle
+
+# YAYIN: main dalına giren her değişiklikte uygulamanın APK'sını (mobile/, React Native) derleyip apk-latest
+# release'ine koyar. Testler ya da doğrulama kırmızıysa hiçbir şey yayınlanmaz.
+# Elle: Actions > "Android APK derle" > Run workflow (main seçili).
+# PR'larda yalnız DENEME: APK mühürsüz derlenir (derleniyor mu?), hiçbir şey yayınlanmaz.
+# Paket adı ve imza hep aynı: yeni APK telefondakinin üstüne kurulur, yerel ilerleme kalır.
+
+on:
+  workflow_dispatch:
+  push:
+    branches:
+      - main
+    paths:
+      - "data/**"
+      - "scripts/**"
+      - "mobile/**"
+      - ".github/workflows/build-apk.yml"
+  pull_request:
+    paths:
+      - "data/**"
+      - "scripts/**"
+      - "mobile/**"
+      - ".github/workflows/build-apk.yml"
+
+# Aynı anda iki yayın olmasın (sonraki, öncekinin bitmesini bekler). PR denemeleri ayrı sırada.
+concurrency:
+  group: ${{ github.event_name == 'pull_request' && format('deneme-{0}', github.ref) || 'yayin' }}
+  cancel-in-progress: false
+
+permissions:
+  contents: write
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Yalnız main'den yayın
+        if: github.event_name != 'pull_request' && github.ref != 'refs/heads/main'
+        run: |
+          echo "::error::Yayın yalnız main dalından yapılır (şu an: ${{ github.ref_name }})."
+          exit 1
+
+      - name: Depoyu al
+        uses: actions/checkout@v4
+
+      - name: Node kur
+        uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+
+      - name: Python kur
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+
+      - name: JDK 17 kur
+        uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: "17"
+
+      # İmza anahtarı repoda değil: GitHub → Settings → Secrets and variables → Actions'taki
+      # IMZA_ANAHTARI (base64 PKCS12, takma adı "thousand") ve IMZA_PAROLA'dan açılır. Yoksa yayın
+      # yapılmaz (yanlış anahtarla imzalı APK telefondakinin üstüne kurulamaz).
+      - name: İmza anahtarını hazırla
+        if: github.event_name != 'pull_request'
+        env:
+          IMZA_ANAHTARI: ${{ secrets.IMZA_ANAHTARI }}
+          IMZA_PAROLA: ${{ secrets.IMZA_PAROLA }}
+        run: |
+          if [ -z "$IMZA_ANAHTARI" ] || [ -z "$IMZA_PAROLA" ]; then
+            echo "::error::IMZA_ANAHTARI / IMZA_PAROLA gizli ayarları yok; yayın yapılmadı."
+            exit 1
+          fi
+          printf '%s' "$IMZA_ANAHTARI" | tr -d ' \r\n' | base64 -d > "$RUNNER_TEMP/imza.p12"
+          keytool -list -storetype PKCS12 -keystore "$RUNNER_TEMP/imza.p12" -storepass "$IMZA_PAROLA" -alias thousand > /dev/null \
+            || { echo "::error::İmza anahtarı açılamadı (gizli ayar eksik/yanlış kopyalanmış olabilir)."; exit 1; }
+          echo "IMZA_DOSYASI=$RUNNER_TEMP/imza.p12" >> "$GITHUB_ENV"
+
+      - name: Testler
+        run: |
+          TZ=Europe/Istanbul node tests/srs.test.js
+          node tests/log.test.js
+          TZ=Europe/Istanbul node tests/hesap_yeni.test.js
+          TZ=Europe/Istanbul node tests/oturum.test.js
+          TZ=Europe/Istanbul node tests/ilerleme.test.js
+          node tests/sozluk.test.js
+          node tests/okuma.test.js
+          node tests/cevirme.test.js
+          bash tests/sunucu.test.sh
+
+      - name: Veri doğrulama
+        run: python3 scripts/validate.py
+
+      # Uygulamanın kelime verisi ve ses haritası (mobile/src/uretilen) data/'dan.
+      - name: Kelime verisini üret
+        run: python3 scripts/build_all.py
+
+      - name: Bağımlılıkları kur (npm ci)
+        working-directory: mobile
+        run: |
+          for i in 1 2 3; do
+            npm ci && break
+            echo "npm ci denemesi $i başarısız, tekrar..."; sleep $((i * 10))
+          done
+
+      # android/ repoda yok: app.json'dan üretilir (sürüm kodu = bu iş akışının çalışma numarası, app.config.js).
+      - name: Android projesini üret (expo prebuild)
+        working-directory: mobile
+        run: npx expo prebuild --platform android --no-install 2>&1 | tee /tmp/prebuild.log
+
+      # Yayın (release) derlemesi: hata ayıklanamaz — USB ile bağlanan biri uygulamanın verisini
+      # (ilerleme, kurtarma kodu) okuyamaz. Yalnız 64 bit arm (APK küçülür; 32 bit
+      # işlemcili çok eski telefonlara kurulmaz).
+      - name: APK derle (release)
+        working-directory: mobile/android
+        env:
+          IMZA_PAROLA: ${{ secrets.IMZA_PAROLA }}
+        run: |
+          set -o pipefail
+          args=(assembleRelease --no-daemon -PreactNativeArchitectures=arm64-v8a)
+          # Yayında Google Play için AAB de (yalnız
+          # iş akışı çıktısı, release'e konmaz). Aynı anahtarla imzalı, aynı işlemci (arm64).
+          if [ "${{ github.event_name }}" != "pull_request" ]; then args+=(bundleRelease); fi
+          if [ -n "${IMZA_DOSYASI:-}" ]; then   # PR denemesinde yok: Expo'nun hata ayıklama anahtarı
+            args+=("-Pandroid.injected.signing.store.file=$IMZA_DOSYASI" "-Pandroid.injected.signing.store.password=$IMZA_PAROLA"
+                   "-Pandroid.injected.signing.key.alias=thousand" "-Pandroid.injected.signing.key.password=$IMZA_PAROLA")
+          fi
+          ./gradlew "${args[@]}" 2>&1 | tee /tmp/gradle.log
+
+      - name: "Deneme: APK hata ayıklanamaz mı"
+        if: github.event_name == 'pull_request'
+        run: |
+          aapt=$(ls "$ANDROID_HOME"/build-tools/*/aapt | tail -n 1)
+          apk=$(ls mobile/android/app/build/outputs/apk/release/*.apk | head -n 1)
+          "$aapt" dump badging "$apk" | grep -E "^package:"
+          if "$aapt" dump badging "$apk" | grep -q "application-debuggable"; then
+            echo "::error::APK hata ayıklanabilir (debuggable) derlenmiş"; exit 1
+          fi
+
+      - name: Hata logunu topla (teşhis)
+        if: failure()
+        run: |
+          {
+            echo "===== expo prebuild (son 40) ====="
+            tail -n 40 /tmp/prebuild.log 2>/dev/null || echo "prebuild.log yok → prebuild'e gelinmedi"
+            echo
+            echo "===== gradle (son 250) ====="
+            tail -n 250 /tmp/gradle.log 2>/dev/null || echo "gradle.log yok → gradle'a gelinmedi"
+          } > ci-error.log
+          echo "log boyutu: $(wc -c < ci-error.log) bayt"
+
+      - name: Hata logunu artifact olarak yükle
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: ci-error-log
+          path: ci-error.log
+          if-no-files-found: warn
+
+      - name: AAB'yi artifact olarak yükle (Google Play için hazır)
+        if: github.event_name != 'pull_request'
+        uses: actions/upload-artifact@v4
+        with:
+          name: thousand-aab
+          path: mobile/android/app/build/outputs/bundle/release/app-release.aab
+          if-no-files-found: error
+
+      - name: APK'yı artifact olarak yükle
+        if: github.event_name != 'pull_request'
+        uses: actions/upload-artifact@v4
+        with:
+          name: thousand-apk
+          path: mobile/android/app/build/outputs/apk/release/app-release.apk
+          if-no-files-found: error
+
+      - name: APK'yı sabit adlandır
+        if: github.event_name != 'pull_request'
+        run: cp mobile/android/app/build/outputs/apk/release/app-release.apk Thousand.apk
+
+      # APK gerçekten yeni anahtarla mı imzalandı? (Yanlış imzalı APK yayınlanmasın.)
+      - name: İmzayı doğrula
+        if: github.event_name != 'pull_request'
+        env:
+          IMZA_PAROLA: ${{ secrets.IMZA_PAROLA }}
+        run: |
+          beklenen=$(keytool -list -storetype PKCS12 -keystore "$IMZA_DOSYASI" -storepass "$IMZA_PAROLA" -alias thousand | grep -o 'SHA-256): .*' | cut -d' ' -f2)
+          apksigner=$(ls "$ANDROID_HOME"/build-tools/*/apksigner | tail -n 1)
+          gercek=$("$apksigner" verify --print-certs Thousand.apk | grep -m1 'SHA-256 digest' | awk '{print $NF}')
+          echo "beklenen: $beklenen"; echo "APK:      $gercek"
+          [ "$(echo "$beklenen" | tr -d ':' | tr 'A-F' 'a-f')" = "$gercek" ] || { echo "::error::APK yanlış anahtarla imzalı"; exit 1; }
+          # Paket adı değişmemeli (yoksa telefondakinin üstüne kurulmaz, ilerleme aktarılamaz); hata ayıklanabilir APK
+          # yayınlanmasın; sürüm numarası da yazılsın.
+          aapt=$(ls "$ANDROID_HOME"/build-tools/*/aapt | tail -n 1)
+          "$aapt" dump badging Thousand.apk | grep -E "^package:|^application-label:"
+          "$aapt" dump badging Thousand.apk | grep -q "^package: name='io.github.ahmetayarsss.thousand'" \
+            || { echo "::error::Paket adı değişmiş"; exit 1; }
+          if "$aapt" dump badging Thousand.apk | grep -q "application-debuggable"; then
+            echo "::error::APK hata ayıklanabilir (debuggable) derlenmiş"; exit 1
+          fi
+
+      # Yayın aracı var olan etiketi taşımaz; etiket hep yayınlanan commit'i göstersin.
+      - name: apk-latest etiketini bu commit'e taşı
+        if: github.event_name != 'pull_request'
+        run: git push --force origin "HEAD:refs/tags/apk-latest"
+
+      - name: Release olarak yayınla (apk-latest)
+        if: github.event_name != 'pull_request'
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: apk-latest
+          name: "Thousand — son APK"
+          prerelease: true
+          files: Thousand.apk
+          body: |
+            main dalından otomatik derlenen APK (main'e her birleşmede güncellenir).
+            Telefona kurmak için: indir → aç → "bilinmeyen kaynaklara izin ver".
+
+      # Yayın aracı eski dosyaları silmez: üretilmeyen dosyalar release sayfasında kalıp yanlışlıkla indirilmesin. Yeni dosyalar yüklendikten
+      # SONRA silinir, böylece sayfada hiçbir an APK'sız kalınmaz.
+      - name: Release'teki eski dosyaları temizle
+        if: github.event_name != 'pull_request'
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          for a in $(gh release view apk-latest --json assets -q '.assets[].name'); do
+            [ "$a" = "Thousand.apk" ] || { echo "siliniyor: $a"; gh release delete-asset apk-latest "$a" -y; }
+          done

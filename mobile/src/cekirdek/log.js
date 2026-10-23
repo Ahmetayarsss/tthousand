@@ -1,0 +1,120 @@
+/*
+ * log.js — Kullanım kaydı (olay günlüğü). Olaylar telefonda birikir; hesap VE kullanıcı izni varsa
+ * src/hesap/hesap.js bunları arada bir sunucuya da gönderir (Supabase: kayitlar tablosu — geliştirici
+ * kayitlar_gorunum'den bakar; izin bir kez sorulur, Ayarlar → Gizlilik), yoksa yalnız telefonda kalır. Geliştirici
+ * modunda Ayarlar → Kayıtlar → Kopyala ile panoya alınır (snapshot).
+ *
+ * Her olay: [zaman(ms), tür, veri?]. Türler:
+ *   sayfa {p}             sayfa açıldı
+ *   test_bas {n}          Test başladı        test {k, ok}   Test kartı
+ *   sinav_bas {rev,nw,yz} Sınav başladı       cevap {k, y, ok, b, ms, yz, g?}
+ *     (cevap k: kart kimliği; çok anlamlı kelimede "anahtar#anlamNo", b yalnız kutu kararı verilince)
+ *   baska_karsilik {k, w} yazılı kartta aynı Türkçe anlamın başka kelimesi (w) yazıldı; yanlış sayılmadı
+ *   sinav_bit {n,ok,tum}  Sınav bitti/bırakıldı
+ *   okuma {…}             Listeyi oku         okuma_hata {m}
+ *   hesap {a}             hesap işlemi        hesap_hata {f, m}
+ *   bildirim {a, …}       bildirim izni (a: izin, d) / bildirime dokunup açma (a: ac, p)
+ *   durt {s}              arkadaşını dürttü (s: gonderildi | bugun_durttun)
+ *   ayar {...}            ayar değişti        dev {a}        geliştirici işlemi
+ *   hata {m, f, l}        yakalanmamış JS hatası (f: kayit = ilerleme telefona yazılamadı, k: anahtar)
+ * Yazma toplu ve ertelenmiş: olay önce bellekte birikir, telefona en geç BEKLE ms sonra tek seferde
+ * yazılır; sayfa kapanırken/arka plana geçerken hemen yazılır. Uygulama aniden çökerse en çok son BEKLE ms'nin olayları kaybolur.
+ * En fazla MAX olay tutulur (eskiler silinir). Her olayın bir sıra numarası var: sira() şimdiye
+ * dek eklenen olay sayısı (silinenler dahil), son olayın numarası budur; sunucuya hangi olayların
+ * gittiği bununla izlenir. Kimlik: rastgele, anonim (cihaz kimliği).
+ */
+(typeof window !== "undefined" ? window : globalThis).OXLOG = (function () {
+  var KEY = "ox3000_log_v1", UIDK = "ox3000_uid", SEQK = "ox3000_log_sira", MAX = 5000, BEKLE = 1000;
+  var buf = null, seq = -1, kirli = false, zaman = null;
+
+  function load() {
+    if (buf) return buf;
+    try { buf = JSON.parse(localStorage.getItem(KEY) || "[]"); } catch (e) { buf = []; }
+    if (!Array.isArray(buf)) buf = [];
+    return buf;
+  }
+  // Son olayın sıra numarası (= şimdiye dek eklenen olay sayısı). Sayaç yoksa (eski sürüm) eldeki olay sayısı.
+  function sira() {
+    if (seq >= 0) return seq;
+    var n = 0;
+    try { n = parseInt(localStorage.getItem(SEQK), 10) || 0; } catch (e) {}
+    seq = Math.max(n, load().length);
+    return seq;
+  }
+  function uid() {
+    try {
+      var u = localStorage.getItem(UIDK);
+      if (!u) { u = Math.random().toString(16).slice(2, 10) + Date.now().toString(16).slice(-4); localStorage.setItem(UIDK, u); }
+      return u;
+    } catch (e) { return ""; }
+  }
+  function add(type, data) {
+    try {
+      var b = load(), s = sira() + 1, e = [Date.now(), type];
+      if (data != null) e.push(data);
+      b.push(e); seq = s;
+      if (b.length > MAX) b.splice(0, b.length - MAX);
+      kirli = true;
+      if (!zaman) zaman = setTimeout(yaz, BEKLE);
+    } catch (e) {}
+  }
+  // Biriken olayları telefona yaz. Kayıt en önemsiz veri: yazılamazsa (hafıza dolu) sessizce geçilir,
+  // ilerleme yazımı ayrıca korunur (srs.js yaz → yerAc).
+  function yaz() {
+    if (zaman) { clearTimeout(zaman); zaman = null; }
+    if (!kirli) return;
+    kirli = false;
+    try {
+      localStorage.setItem(KEY, JSON.stringify(load()));
+      localStorage.setItem(SEQK, String(seq));
+    } catch (e) {}
+  }
+  function count() { return load().length; }
+  function events() { return load(); }   // salt okunur (hesap.js sunucuya gönderirken)
+  function size() { yaz(); try { return (localStorage.getItem(KEY) || "").length; } catch (e) { return 0; } }
+  function clear() { buf = []; kirli = false; try { localStorage.removeItem(KEY); } catch (e) {} }
+  // Telefon hafızası dolunca (srs.js ilerlemeyi yazamayınca) yer açar: en eski yarıyı siler.
+  // Kayıt en önemsiz veri; ilerleme ondan önce gelir. Silinen bir şey olduysa true.
+  function yerAc() {
+    var b = load();
+    if (b.length < 2) { if (!b.length) return false; clear(); return true; }
+    b.splice(0, Math.ceil(b.length / 2));
+    kirli = false;
+    try { localStorage.setItem(KEY, JSON.stringify(b)); } catch (e) { clear(); }
+    return true;
+  }
+
+  // Dışa aktarılacak tüm veri: olaylar + ilerleme durumu (anlamak için gerekenler).
+  function snapshot() {
+    function j(k, d) { try { var v = JSON.parse(localStorage.getItem(k)); return v == null ? d : v; } catch (e) { return d; } }
+    return {
+      uygulama: "thousand", kimlik: uid(), surum: window.OX_WEBVER || null,
+      zaman: Date.now(), cihaz: navigator.userAgent,
+      ayar: j("ox3000_settings_v1", {}), gelistirici: j("ox3000_dev_v1", {}),
+      kelimeler: j("ox3000_srs_v1", {}), gunluk: j("ox3000_daily_v1", {}),
+      sinavlar: j("ox3000_sessions_v1", []),
+      olaylar: load()
+    };
+  }
+  // Sayfa açılışı + yakalanmamış hatalar otomatik kaydedilir.
+  try {
+    if (typeof window !== "undefined" && window.addEventListener) {
+      // Geri tuşuyla önbellekten dönen sayfa eski kopyayı yazmasın (arada başka sayfalar olay ekledi).
+      window.addEventListener("pageshow", function (e) { if (e.persisted) { buf = null; seq = -1; kirli = false; } });
+      // Sayfadan çıkarken / uygulama arka plana geçerken bekleyenleri hemen yaz (sonraki sayfa okusun).
+      window.addEventListener("pagehide", yaz);
+      if (typeof document !== "undefined" && document.addEventListener)
+        document.addEventListener("visibilitychange", function () { if (document.hidden) yaz(); });
+      add("sayfa", { p: (location.pathname.split("/").pop() || "index.html").replace(".html", "") });
+      window.addEventListener("error", function (e) {
+        add("hata", { m: String(e.message || "").slice(0, 200), f: String(e.filename || "").split("/").pop(), l: e.lineno || 0 });
+      });
+      window.addEventListener("unhandledrejection", function (e) {
+        add("hata", { m: String((e.reason && (e.reason.message || e.reason)) || "promise").slice(0, 200), f: "promise" });
+      });
+    }
+  } catch (e) {}
+
+  return { add: add, count: count, size: size, clear: clear, yerAc: yerAc, snapshot: snapshot, uid: uid,
+           sira: sira, events: events, yaz: yaz };
+})();

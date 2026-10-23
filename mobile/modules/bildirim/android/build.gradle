@@ -1,0 +1,23 @@
+// Bildirimler (src/main/java/expo/modules/bildirim): seri / tekrar hatırlatmaları, arkadaşlık isteği ve dürtme
+// (uygulama kapalıyken de, WorkManager). Uygulamaya Expo'nun yerel modül yoluyla girer (modules/).
+plugins {
+  id 'com.android.library'
+  id 'expo-module-gradle-plugin'
+}
+
+group = 'io.github.ahmetayarsss.thousand'
+version = '1.0.0'
+
+android {
+  namespace "expo.modules.bildirim"
+  defaultConfig {
+    consumerProguardFiles "consumer-rules.pro"
+  }
+}
+
+dependencies {
+  implementation "androidx.core:core-ktx:1.17.0"
+  // Arka planda kontrol ve zamanlı hatırlatmalar. 2.9.1 yayın derlemesinde açılışta çöküyordu ("Failed to create an
+  // instance of ... WorkDatabase": küçültme (R8) veritabanı sınıfının kurucusunu atmış); güncel sürüm + consumer-rules.pro.
+  implementation "androidx.work:work-runtime:2.11.2"
+}

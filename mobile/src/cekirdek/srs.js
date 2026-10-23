@@ -1,0 +1,328 @@
+/*
+ * srs.js — Kelime bazlı aralıklı tekrar (kutu sistemi). Tüm sayfalar paylaşır.
+ *
+ * Her kelimenin seviyesi:
+ *   0 = yeni (hiç sınavda cevaplanmadı, kayıt yok)
+ *   1, 2, 3 = öğreniliyor (kutular)
+ *   4, 5, 6, 7 = olgun (3. kutuyu geçti; her doğru cevapta aralığı uzar)
+ * Aralıklar (gün): 1 → 1, 2 → 3, 3 → 7; olgun 4 → 7, 5 → 14, 6 → 30, 7 → 60.
+ *
+ * Sınavda cevap:
+ *   yeni kelime: doğru → 2, yanlış → 1 (artık döngüde, yeni sayılmaz)
+ *   döngüdeki:   doğru → bir üst (en çok 7, orada kalır), yanlış → bir alt (en az 1;
+ *                olgun hangi seviyede olursa olsun → 2, Kutu 3 gibi)
+ *   Yanlışta o anki yön (en2tr/tr2en) kilitlenir; doğruda kilit kalkar.
+ *
+ * Çok anlamlı kelime (tr'de ";" ile ayrılan anlamlar): kelime yine tek kutu, anlamlar ayrı ayrı sorulur
+ * (answerMeaning). Turda sorulan anlamların hepsi cevaplanmadan kutu değişmez: hepsi doğru → üst kutu; biri bile
+ * yanlış → alt kutu, doğru bilinenler "normalde çıkacağı kutu"ya park edilir (kayıtta pk: {anlamNo: kutu}) ve
+ * kelime o kutuya gelene kadar sorulmaz. Turun cevapları karar verilene dek PARKEY'de durur (yarım kalan sınav).
+ *
+ * Sınav kuyruğu: önce vadesi gelen tekrarlar (yüksek kutu önce, aynı kutudakiler
+ * karışık), sonra "tur" (batch) yeni kelimeleri karışık. Tur, başladığı anda ana
+ * sayfadaki listenin (ayarlardaki kelime sayısı kadar) kopyasıdır; sınav bırakılıp
+ * yeniden açılınca kalan tur kelimeleriyle devam eder, hepsi cevaplanınca bir
+ * sonraki sınavda yeni tur (listenin o anki hali) başlar.
+ *
+ * Günler yerel saatle gece 00:00'da değişir. Anahtar: "grupNo|kelime"
+ * (aynı kelime birden fazla grupta geçebildiği için).
+ *
+ * Sayfalar önce setCatalog() ile tüm kelimeleri sırasıyla (grup 1 → 30,
+ * grup içi sırayla) tanıtır; liste, sınav sırası ve sayaçlar buna göre çıkar.
+ */
+(typeof window !== "undefined" ? window : globalThis).SRS = (function () {
+  var KEY = "ox3000_srs_v1", DAYMS = 86400000;
+  var IV = [0, 1, 3, 7, 7, 14, 30, 60];  // seviye → aralık (gün): kutu 1–3, olgun 4–7
+  var BMAX = IV.length - 1;              // en yüksek seviye (7: olgun, 60 gün)
+  var LV = ["A1", "A2", "B1", "B2", "C1"];
+  var SETK = "ox3000_settings_v1", DEVK = "ox3000_dev_v1";
+  var BKEY = "ox3000_exam_batch_v1", DAYK = "ox3000_daily_v1";
+  var LMIN = 5, LMAX = 300, LDEF = 20;
+  var PARKEY = "ox3000_parca_v1";   // çok anlamlı kelimede kararı bekleyen tur: {anahtar: {anlamNo: 1 doğru | 0 yanlış}}
+  var CAT = [], IDX = {}, st = null;
+
+  var G = typeof window !== "undefined" ? window : globalThis;
+  function getJ(k, d) { try { var v = JSON.parse(localStorage.getItem(k)); return v == null ? d : v; } catch (e) { return d; } }
+  function setJ(k, v) { return yaz(k, JSON.stringify(v)); }
+
+  // Kalıcı yazma. Olmazsa (çoğunlukla telefon hafızası/kotası dolu) önce kullanım kaydını kısaltıp
+  // (OXLOG.yerAc) yer açar ve tekrar dener; yine olmazsa kullanıcıya görünür uyarı verir ve kayda
+  // yazar. İlerleme yazmaları sessizce kaybolmaz. Dönen: yazıldı mı.
+  var sonHata = null, uyarildi = false;
+  function yaz(k, metin) {
+    try { localStorage.setItem(k, metin); return true; } catch (e) { sonHata = e; }
+    try {
+      if (G.OXLOG && typeof G.OXLOG.yerAc === "function" && G.OXLOG.yerAc()) {
+        localStorage.setItem(k, metin); sonHata = null; return true;
+      }
+    } catch (e) { sonHata = e; }
+    kayitHatasi(k, sonHata);
+    return false;
+  }
+  function kayitHatasi(k, e) {
+    try { if (G.OXLOG) G.OXLOG.add("hata", { f: "kayit", k: k, m: String((e && (e.name || e.message)) || e).slice(0, 80) }); } catch (x) {}
+    if (uyarildi || typeof document === "undefined" || !document.body) return;
+    uyarildi = true;
+    try {
+      var d = document.createElement("div");
+      d.setAttribute("role", "alert");
+      d.textContent = "⚠️ İlerlemen kaydedilemedi — telefonun hafızası dolu olabilir. Biraz yer açıp uygulamayı yeniden aç. (Kapatmak için dokun)";
+      d.style.cssText = "position:fixed;left:12px;right:12px;top:12px;z-index:99999;background:#B03A2E;color:#fff;font:600 13px/1.4 system-ui;padding:12px 14px;border-radius:12px;box-shadow:0 6px 18px rgba(0,0,0,.3)";
+      d.onclick = function () { d.remove(); };
+      document.body.appendChild(d);
+    } catch (x) {}
+  }
+  function shuffle(a) {
+    for (var i = a.length - 1; i > 0; i--) { var j = Math.floor(Math.random() * (i + 1)), x = a[i]; a[i] = a[j]; a[j] = x; }
+    return a;
+  }
+
+  // Geliştirici modu: on = açık (kullanıcılardan gizli; Ayarlar başlığına 7 kez hızlıca
+  // dokununca açılır/kapanır), off = gün kaydırma (test için "1 gün ileri sar").
+  // Mod kapalıyken off yok sayılır (gerçek tarih); kayıtlı değer durur, mod yeniden açılınca
+  // geçerli olur.
+  function devStored() { var d = getJ(DEVK, {}) || {}; return { on: !!d.on, off: d.off | 0 }; }
+  function dev() { var d = devStored(); return d.on ? d : { on: false, off: 0 }; }
+  function setDev(p) { var d = devStored(); for (var k in p) d[k] = p[k]; setJ(DEVK, d); }
+  function nowMs() { return Date.now() + dev().off * DAYMS; }
+
+  // Genel ayarlar (ox3000_settings_v1): opt("loop", true), opt("readTr", false) …
+  function opt(k, d) { var s = getJ(SETK, {}) || {}; return Object.prototype.hasOwnProperty.call(s, k) ? s[k] : d; }
+  function setOpt(k, v) { var s = getJ(SETK, {}) || {}; s[k] = v; setJ(SETK, s); return v; }
+
+  // Ana sayfadaki yeni kelime sayısı (= bir sınav turundaki yeni kelime sayısı). Varsayılan 20.
+  // listN yalnız kullanıcı ayarlayınca yazılır; hiç seçmemiş olan varsayılanı alır.
+  function listSize() { var n = (getJ(SETK, {}) || {}).listN | 0; return n >= LMIN && n <= LMAX ? n : LDEF; }
+  function setListSize(n) {
+    n = Math.max(LMIN, Math.min(LMAX, n | 0));
+    var s = getJ(SETK, {}) || {}; s.listN = n; setJ(SETK, s);
+    try { localStorage.removeItem(BKEY); } catch (e) {}   // yarım tur yeni sayıyla yeniden kurulsun
+    return n;
+  }
+
+  function load() {
+    if (st) return st;
+    try { st = JSON.parse(localStorage.getItem(KEY) || "{}"); } catch (e) { st = {}; }
+    if (!st || typeof st !== "object") st = {};
+    return st;
+  }
+  function save() { return yaz(KEY, JSON.stringify(st)); }
+
+  function today(now) {
+    var d = new Date(now == null ? nowMs() : now);
+    return Math.floor((d.getTime() - d.getTimezoneOffset() * 60000) / DAYMS);
+  }
+  function key(no, w) { return no + "|" + w; }
+
+  // list: [{k, lv, g}] — k anahtar, lv seviye ("A1"…), g grup index (0..29)
+  function setCatalog(list) {
+    CAT = list; IDX = {};
+    for (var i = 0; i < list.length; i++) IDX[list[i].k] = i;
+  }
+  // GROUPS dizisinden katalog üret (sayfalardaki gömülü veri biçimi).
+  // Aynı grupta aynı kelime ikinci kez geçerse ("set" isim+fiil) anahtara "|2"
+  // eklenir. Kelime nesnelerine anahtar it._k olarak iliştirilir; sayfalar hep
+  // bunu kullanır, böylece her yerde aynı anahtar çıkar.
+  function catalogFromGroups(groups) {
+    var out = [];
+    for (var g = 0; g < groups.length; g++) {
+      var G = groups[g], ws = G.items || G.ws || [], seen = {};
+      for (var i = 0; i < ws.length; i++) {
+        var w = typeof ws[i] === "string" ? ws[i] : ws[i].w, k = key(G.no, w);
+        if (seen[k]) { seen[k]++; k = k + "|" + seen[k]; } else seen[k] = 1;
+        if (typeof ws[i] === "object") ws[i]._k = k;
+        out.push({ k: k, lv: G.level, g: g });
+      }
+    }
+    return out;
+  }
+
+  function rec(k) { return load()[k] || null; }
+  function level(k) { var r = rec(k); return r ? r.b : 0; }
+  function isNew(k) { return !rec(k); }
+  function isDue(k, now) { var r = rec(k); return !!r && r.due <= today(now); }
+  function dirOf(k) { var r = rec(k); return (r && r.d) || null; }
+
+  // Sınav cevabı. dir: o an sorulan yön (yanlışsa kilitlenir).
+  function answer(k, ok, dir, now) {
+    var s = load(), r = s[k], t = today(now), from = r ? r.b : 0, to;
+    if (!r) { to = ok ? 2 : 1; r = { b: to, n: 0, l: 0, f: t }; }
+    else { to = ok ? Math.min(BMAX, r.b + 1) : Math.max(1, Math.min(r.b, 3) - 1); r.b = to; }
+    if (ok) { r.n++; delete r.d; } else { r.l++; if (dir) r.d = dir; }
+    r.due = t + IV[to]; r.a = t;
+    s[k] = r; save();
+    var dl = getJ(DAYK, {}) || {}, e = dl[t] || (dl[t] = { n: 0, ok: 0, nw: 0 });   // günlük özet (istatistik)
+    e.n++; if (ok) e.ok++; if (!from) e.nw++; setJ(DAYK, dl);
+    return { from: from, to: to, due: r.due };
+  }
+
+  // ---- çok anlamlı kelimeler ----
+  // Kelimenin anlamları: tr ";" ile ayrılır; yalnız parantezden oluşan not ("(mastar eki)") anlam sayılmaz
+  // (answerSlots'taki kuralla aynı).
+  function meanings(item) {
+    return String((item && item.tr) || "").split(";").map(function (m) { return m.trim(); })
+      .filter(function (m) { return alts(m).length > 0; });
+  }
+  // Bu turda sorulan anlamlar: park edilmemiş olanlar (park kutusu kelimenin kutusundan büyükse bekler).
+  function turAnlamlari(r, n) {
+    var pk = (r && r.pk) || {}, b = r ? r.b : 0, out = [];
+    for (var i = 0; i < n; i++) if (!(pk[i] > b)) out.push(i);
+    if (!out.length) for (i = 0; i < n; i++) out.push(i);   // veri değiştiyse: hepsi
+    return out;
+  }
+  // Sorulmayı bekleyen anlamlar (turdan, henüz cevaplanmamış olanlar).
+  function pendingMeanings(k, n) {
+    var p = (getJ(PARKEY, {}) || {})[k] || {};
+    return turAnlamlari(rec(k), n).filter(function (i) { return !(i in p); });
+  }
+  // Bir anlamın cevabı (n: kelimenin anlam sayısı). Tur bitmediyse null; bittiyse karar (answer'ın sonucu,
+  // ayrıca yanlis: yanlış bilinen anlamlar). Karar answer ile verilir: günlük sayılar kelime başına bir.
+  function answerMeaning(k, i, ok, n, now) {
+    var pa = getJ(PARKEY, {}) || {}, p = pa[k] || (pa[k] = {}), r0 = rec(k), tur = turAnlamlari(r0, n);
+    p[i] = ok ? 1 : 0;
+    if (tur.some(function (j) { return !(j in p); })) { setJ(PARKEY, pa); return null; }
+    var hepsi = tur.every(function (j) { return p[j] === 1; }), from = r0 ? r0.b : 0;
+    var hedef = from ? Math.min(BMAX, from + 1) : 2;   // hepsi doğru olsaydı çıkacağı kutu
+    var res = answer(k, hepsi, "tr2en", now), r = load()[k], pk = r.pk || {};
+    if (hepsi) { for (var j in pk) if (pk[j] <= r.b) delete pk[j]; }
+    else tur.forEach(function (j) { if (p[j] === 1) pk[j] = hedef; });
+    if (Object.keys(pk).length) r.pk = pk; else delete r.pk;
+    save();
+    delete pa[k]; setJ(PARKEY, pa);
+    res.yanlis = tur.filter(function (j) { return p[j] !== 1; });
+    return res;
+  }
+
+  // Vadesi gelen döngü kelimeleri: yüksek seviye önce, eşitse en çok geciken,
+  // o da eşitse katalog sırası (sayım/özet için; sınav sırası examQueue'da).
+  function dueList(now) {
+    var s = load(), t = today(now), out = [];
+    for (var k in s) if (IDX[k] != null && s[k].due <= t) out.push(k);
+    out.sort(function (a, b) {
+      return (s[b].b - s[a].b) || (s[a].due - s[b].due) || (IDX[a] - IDX[b]);
+    });
+    return out;
+  }
+  // Sıradaki yeni kelimeler (katalog sırasıyla). n verilmezse hepsi.
+  function newList(n) {
+    var s = load(), out = [];
+    for (var i = 0; i < CAT.length && (n == null || out.length < n); i++)
+      if (!s[CAT[i].k]) out.push(CAT[i].k);
+    return out;
+  }
+  // Sınav kuyruğu: tekrarlar (kutu yüksekten düşüğe, aynı kutu içinde karışık) +
+  // turun cevaplanmamış yeni kelimeleri (karışık). Tur bittiyse listeden yenisi kurulur.
+  function examQueue(now) {
+    var s = load(), t = today(now), by = {}, reviews = [];
+    for (var k in s) if (IDX[k] != null && s[k].due <= t) (by[s[k].b] || (by[s[k].b] = [])).push(k);
+    for (var b = BMAX; b >= 1; b--) if (by[b]) reviews = reviews.concat(shuffle(by[b]));
+    var bt = getJ(BKEY, []);
+    bt = (Array.isArray(bt) ? bt : []).filter(function (k) { return IDX[k] != null && !s[k]; });
+    if (!bt.length) { bt = newList(listSize()); setJ(BKEY, bt); }
+    return { reviews: reviews, news: shuffle(bt.slice()) };
+  }
+
+  function inCycle() { var s = load(), c = 0; for (var k in s) if (IDX[k] != null) c++; return c; }
+
+  // Ana sayfadaki yeni kelime listesinde bulunan en yüksek seviye etiketi.
+  function topLevel(n) {
+    var l = newList(n == null ? listSize() : n), best = -1;
+    for (var i = 0; i < l.length; i++) {
+      var j = LV.indexOf(CAT[IDX[l[i]]].lv); if (j > best) best = j;
+    }
+    return best < 0 ? null : LV[best];
+  }
+
+  // Grup (kısım) sayaçları: olgun · öğreniliyor · yeni.
+  function groupCounts(g) {
+    var s = load(), c = { mature: 0, learning: 0, fresh: 0, total: 0 };
+    for (var i = 0; i < CAT.length; i++) {
+      if (CAT[i].g !== g) continue;
+      var r = s[CAT[i].k]; c.total++;
+      if (!r) c.fresh++; else if (r.b >= 4) c.mature++; else c.learning++;
+    }
+    return c;
+  }
+  function totals() {
+    var s = load(), c = { mature: 0, learning: 0, fresh: 0, total: CAT.length };
+    for (var i = 0; i < CAT.length; i++) {
+      var r = s[CAT[i].k];
+      if (!r) c.fresh++; else if (r.b >= 4) c.mature++; else c.learning++;
+    }
+    return c;
+  }
+  // En yakın gelecek vade (bugün vadesi yoksa "sonraki tekrar X gün sonra").
+  function nextDue(now) {
+    var s = load(), t = today(now), best = null;
+    for (var k in s) if (IDX[k] != null && s[k].due > t && (best == null || s[k].due < best)) best = s[k].due;
+    return best == null ? null : best - t;
+  }
+
+  // ---- Yazılı cevap kontrolü (sınavdaki altın kartlar) ----
+  // Büyük/küçük harf, noktalama, boşluk ve Türkçe harf farkı (ı/i, ş/s, ç/c, ğ/g, ö/o, ü/u)
+  // önemsenmez; parantez içi yazılmasa da olur. Yazım hatası kabul edilmez.
+  function norm(s) {
+    return String(s || "").replace(/[İI]/g, "i").toLowerCase().replace(/ı/g, "i")
+      .normalize("NFD").replace(/[\u0300-\u036f]/g, "")
+      .replace(/\([^)]*\)/g, " ").replace(/[^a-z0-9]/g, "");
+  }
+  function alts(str) {
+    return String(str).replace(/\([^)]*\)/g, " ").split(/[,/]/).map(norm).filter(Boolean);
+  }
+  // Beklenen cevap kutuları: her kutu için kabul edilen yazımlar.
+  //   tr2en (Türkçe gösterilir): tek kutu, yalnız kartın kelimesi ("a, an" → a ya da an).
+  //   en2tr: her anlam (";") ayrı kutu; eş anlamlılardan (",") biri yeterli.
+  //   Yalnız parantezden oluşan anlam ("(mastar eki)") not sayılır, kutu açılmaz.
+  function answerSlots(item, dir) {
+    if (dir === "tr2en") return [alts(item.w)];
+    var out = [];
+    String(item.tr || "").split(";").forEach(function (m) { var a = alts(m); if (a.length) out.push(a); });
+    return out.length ? out : [[norm(item.tr)]];
+  }
+  // Kutudaki yazı bir anlama uyar: virgülle birden çok yazıldıysa hepsi o anlamın yazımı olmalı.
+  function fits(input, a) {
+    var parts = String(input || "").split(/[,/;]/).map(norm).filter(Boolean);
+    if (!parts.length) return false;
+    for (var i = 0; i < parts.length; i++) if (a.indexOf(parts[i]) < 0) return false;
+    return true;
+  }
+  // inputs: kutulardaki yazılar (sırası serbest). Dönen: {ok, marks[]} (her kutu doğru mu).
+  function checkTyped(item, dir, inputs) {
+    var slots = answerSlots(item, dir), n = slots.length, best = null, idx = [];
+    for (var i = 0; i < n; i++) idx.push(i);
+    (function perm(k) {
+      if (k === n) {
+        var m = idx.map(function (e, j) { return fits(inputs[j], slots[e]); }), c = m.filter(Boolean).length;
+        if (!best || c > best.c) best = { m: m, c: c };
+        return;
+      }
+      for (var j = k; j < n; j++) { var t = idx[k]; idx[k] = idx[j]; idx[j] = t; perm(k + 1); t = idx[k]; idx[k] = idx[j]; idx[j] = t; }
+    })(0);
+    return { ok: best.c === n, marks: best.m };
+  }
+
+  // İstatistik için ham veriler.
+  function records() { return load(); }
+  function daily() { return getJ(DAYK, {}) || {}; }
+  function catalogKey(i) { return CAT[i] && CAT[i].k; }
+
+  function reset() {
+    st = {};
+    try { localStorage.removeItem(KEY); localStorage.removeItem(BKEY); localStorage.removeItem(DAYK); localStorage.removeItem(PARKEY); } catch (e) {}
+  }
+  function _reload() { st = null; }   // testler için
+
+  return {
+    IV: IV, BMAX: BMAX, today: today, now: nowMs, key: key, shuffle: shuffle,
+    dev: dev, setDev: setDev, listSize: listSize, setListSize: setListSize, opt: opt, setOpt: setOpt,
+    LMIN: LMIN, LMAX: LMAX, records: records, daily: daily, catalogKey: catalogKey,
+    norm: norm, answerSlots: answerSlots, checkTyped: checkTyped, alts: alts,
+    meanings: meanings, pendingMeanings: pendingMeanings, answerMeaning: answerMeaning,
+    setCatalog: setCatalog, catalogFromGroups: catalogFromGroups,
+    level: level, isNew: isNew, isDue: isDue, dirOf: dirOf, answer: answer,
+    dueList: dueList, newList: newList, examQueue: examQueue,
+    inCycle: inCycle, topLevel: topLevel, groupCounts: groupCounts, totals: totals,
+    nextDue: nextDue, reset: reset, _reload: _reload,
+    sonKayitHatasi: function () { return sonHata; }, yaz: yaz
+  };
+})();

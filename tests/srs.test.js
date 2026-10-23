@@ -1,0 +1,412 @@
+// srs.js kurallarının testi. Çalıştır: TZ=UTC node tests/srs.test.js
+const assert = require("assert");
+const path = require("path");
+const fs = require("fs");
+
+const mem = {};
+global.localStorage = {
+  getItem: k => (k in mem ? mem[k] : null),
+  setItem: (k, v) => { mem[k] = String(v); },
+  removeItem: k => { delete mem[k]; },
+};
+require(path.join(__dirname, "..", "mobile", "src", "cekirdek", "srs.js"));
+const S = globalThis.SRS;
+
+const groups = JSON.parse(fs.readFileSync(path.join(__dirname, "..", "data", "all_groups.json"), "utf8"));
+S.setCatalog(S.catalogFromGroups(groups));
+
+const D = 86400000, T0 = Date.UTC(2026, 0, 10, 12);   // gün ortası
+const at = d => T0 + d * D;
+const k1 = S.key(1, groups[0].items[0].w), k2 = S.key(1, groups[0].items[1].w);
+let n = 0; const t = (name, fn) => { S.reset(); fn(); n++; console.log("ok -", name); };
+
+t("katalog: 3000 benzersiz anahtar", () => {
+  const ks = S.catalogFromGroups(groups).map(x => x.k);
+  assert.strictEqual(ks.length, 3000);
+  assert.strictEqual(new Set(ks).size, 3000);
+});
+
+t("başta her şey yeni, döngü 0, liste 100", () => {
+  assert.strictEqual(S.inCycle(), 0);
+  assert.strictEqual(S.newList(100).length, 100);
+  assert.strictEqual(S.newList(100)[0], k1);
+  assert.deepStrictEqual(S.dueList(at(0)), []);
+});
+
+t("yeni doğru → kutu 2, 3 gün sonra vade", () => {
+  const r = S.answer(k1, true, "en2tr", at(0));
+  assert.deepStrictEqual([r.from, r.to], [0, 2]);
+  assert.strictEqual(S.isNew(k1), false);
+  assert.strictEqual(S.isDue(k1, at(2)), false);
+  assert.strictEqual(S.isDue(k1, at(3)), true);
+});
+
+t("yeni yanlış → kutu 1, ertesi gün vade, yön kilitli", () => {
+  S.answer(k1, false, "tr2en", at(0));
+  assert.strictEqual(S.level(k1), 1);
+  assert.strictEqual(S.dirOf(k1), "tr2en");
+  assert.strictEqual(S.isDue(k1, at(1)), true);
+});
+
+t("cevaplanan listeden düşer, alttan sıradaki gelir", () => {
+  const before = S.newList(100);
+  S.answer(k1, true, null, at(0));
+  const after = S.newList(100);
+  assert.strictEqual(after.length, 100);
+  assert.strictEqual(after[0], k2);
+  assert.strictEqual(after[99], S.newList(101)[99]);
+  assert.ok(!after.includes(k1) && before.includes(k1));
+  assert.strictEqual(S.inCycle(), 1);
+});
+
+t("kutu yolculuğu 1→2→3→olgun 4→5→6→7 (7'de kalır), aralıklar 1/3/7/7/14/30/60", () => {
+  S.answer(k1, false, null, at(0));          // 1  vade +1
+  let d = 1;                                 // her doğru cevap tam vade gününde: [seviye, aralık]
+  for (const [to, iv] of [[2, 3], [3, 7], [4, 7], [5, 14], [6, 30], [7, 60], [7, 60]]) {
+    const r = S.answer(k1, true, null, at(d));
+    assert.deepStrictEqual([r.to, r.due - S.today(at(d))], [to, iv]);
+    d += iv;
+  }
+  assert.strictEqual(S.BMAX, 7);
+});
+
+t("yanlış → bir kutu aşağı (olgun 4–7 → 2, 1'de 1 kalır)", () => {
+  S.answer(k1, true, null, at(0));           // 2
+  S.answer(k1, true, null, at(3));           // 3
+  S.answer(k1, true, null, at(10));          // 4 olgun
+  let r = S.answer(k1, false, null, at(17));
+  assert.deepStrictEqual([r.to, r.due - S.today(at(17))], [2, 3]);
+  assert.strictEqual(S.answer(k1, false, null, at(20)).to, 1);
+  assert.strictEqual(S.answer(k1, false, null, at(21)).to, 1);
+  S.answer(k2, true, null, at(0));           // 2
+  S.answer(k2, true, null, at(3));           // 3
+  assert.strictEqual(S.answer(k2, false, null, at(10)).to, 2);
+  const k3 = S.newList(1)[0];                // 2→3→4→5→6→7 (olgun, 60 gün)
+  [0, 3, 10, 17, 31, 61].forEach(d => S.answer(k3, true, null, at(d)));
+  assert.strictEqual(S.level(k3), 7);
+  r = S.answer(k3, false, null, at(121));
+  assert.deepStrictEqual([r.from, r.to, r.due - S.today(at(121))], [7, 2, 3]);
+});
+
+t("doğru cevap yön kilidini kaldırır", () => {
+  S.answer(k1, false, "tr2en", at(0));
+  S.answer(k1, true, "tr2en", at(1));
+  assert.strictEqual(S.dirOf(k1), null);
+});
+
+t("sınav sırası: yüksek kutu önce, eşitse en çok geciken", () => {
+  const [a, b, c] = S.newList(3);
+  S.answer(a, false, null, at(0));           // a: kutu 1, vade gün 1
+  S.answer(b, true, null, at(0));            // b: kutu 2, vade gün 3
+  S.answer(c, false, null, at(2));           // c: kutu 1, vade gün 3
+  assert.deepStrictEqual(S.dueList(at(5)), [b, a, c]);
+  assert.deepStrictEqual(S.dueList(at(1)), [a]);   // vadesi gelmeyen girmez
+});
+
+t("sınav kuyruğu: tekrarlar kutu yüksekten düşüğe, sonra turun yenileri", () => {
+  const ks = S.newList(6);
+  S.answer(ks[0], false, null, at(0));                                        // kutu 1
+  S.answer(ks[1], false, null, at(0));                                        // kutu 1
+  S.answer(ks[2], true, null, at(0));                                         // kutu 2
+  S.answer(ks[3], true, null, at(0)); S.answer(ks[3], true, null, at(3));     // kutu 3
+  const q = S.examQueue(at(30));
+  assert.strictEqual(q.reviews.length, 4);
+  assert.deepStrictEqual(q.reviews.map(S.level), [3, 2, 1, 1]);
+  assert.deepStrictEqual(new Set(q.reviews.slice(2)), new Set([ks[0], ks[1]]));
+  assert.strictEqual(q.news.length, 20);                                      // varsayılan liste
+  assert.deepStrictEqual(new Set(q.news), new Set(S.newList(20)));
+});
+
+t("sınav kuyruğu: olgun 5–7 de gelir, seviye yüksekten düşüğe", () => {
+  const up = (k, b) => {                     // gün 0'da yeni; her vadesinde doğru → b seviyesine
+    let r = S.answer(k, b > 1, null, at(0));
+    while (r.to < b) r = S.answer(k, true, null, at(r.due - S.today(at(0))));
+  };
+  const ks = S.newList(10), lv = [5, 1, 7, 3, 6, 2, 4, 7, 5, 6];
+  ks.forEach((k, i) => up(k, lv[i]));
+  const q = S.examQueue(at(200));                                             // hepsinin vadesi geçti
+  assert.deepStrictEqual(q.reviews.map(S.level), [7, 7, 6, 6, 5, 5, 4, 3, 2, 1]);
+  assert.deepStrictEqual(new Set(q.reviews), new Set(ks));
+  assert.deepStrictEqual(S.examQueue(at(60)).reviews.map(S.level), [5, 5, 4, 3, 2, 1]);   // 6 (gün 61) ve 7 (gün 121) henüz değil
+});
+
+t("aynı kutudaki tekrarlar karışık gelir", () => {
+  const ks = S.newList(8);
+  ks.forEach(k => S.answer(k, false, null, at(0)));
+  const seen = new Set();
+  for (let i = 0; i < 40; i++) seen.add(S.examQueue(at(5)).reviews.join());
+  assert.ok(seen.size > 1);
+});
+
+t("tur: yarıda bırakılınca kalanlarla sürer, bitince yeni tur kurulur", () => {
+  S.setListSize(10);
+  const first = S.examQueue(at(0)).news;
+  assert.strictEqual(first.length, 10);
+  first.slice(0, 4).forEach(k => S.answer(k, true, null, at(0)));
+  const again = S.examQueue(at(0)).news;                                      // liste yenilendi ama tur aynı
+  assert.deepStrictEqual(new Set(again), new Set(first.slice(4)));
+  again.forEach(k => S.answer(k, true, null, at(0)));
+  const next = S.examQueue(at(0)).news;                                       // tur bitti → yeni tur = güncel liste
+  assert.deepStrictEqual(new Set(next), new Set(S.newList(10)));
+  assert.ok(next.every(k => !first.includes(k)));
+  S.setListSize(100);
+});
+
+t("liste sayısı ayarı: sınırlar, varsayılan 20, değişince tur sıfırlanır", () => {
+  localStorage.removeItem("ox3000_settings_v1");
+  assert.strictEqual(S.listSize(), 20);
+  assert.strictEqual(S.examQueue(at(0)).news.length, 20);
+  assert.strictEqual(S.setListSize(30), 30);
+  assert.strictEqual(S.topLevel(), "A1");
+  assert.strictEqual(S.examQueue(at(0)).news.length, 30);
+  S.setListSize(12);
+  assert.strictEqual(S.examQueue(at(0)).news.length, 12);
+  assert.strictEqual(S.setListSize(1), S.LMIN);
+  assert.strictEqual(S.setListSize(9999), S.LMAX);
+  S.setListSize(100);
+});
+
+t("liste sayısı: elle 100 seçmiş kullanıcı 100'de kalır (varsayılan değişse de)", () => {
+  localStorage.setItem("ox3000_settings_v1", JSON.stringify({ listN: 100, loop: true }));
+  assert.strictEqual(S.listSize(), 100);
+  assert.strictEqual(S.examQueue(at(0)).news.length, 100);
+});
+
+t("geliştirici: gün kaydırma vadeyi öne çeker", () => {
+  S.answer(k1, false, null);                                                  // bugün, kutu 1
+  assert.strictEqual(S.isDue(k1), false);
+  S.setDev({ on: true, off: 1 });
+  assert.strictEqual(S.isDue(k1), true);
+  assert.strictEqual(S.today(), S.today(Date.now()) + 1);
+  S.setDev({ on: false, off: 0 });
+});
+
+t("geliştirici: mod kapalıyken gün kaydırma yok sayılır, açılınca geri gelir", () => {
+  const near = (a, b) => Math.abs(a - b) < 1000;
+  S.answer(k1, false, null);                                                  // bugün, kutu 1 (vade yarın)
+  localStorage.setItem("ox3000_dev_v1", JSON.stringify({ off: 3, noCheat: true }));   // eski sürümden kalan ("on" yok)
+  assert.deepStrictEqual(S.dev(), { on: false, off: 0 });
+  assert.ok(near(S.now(), Date.now()));
+  assert.strictEqual(S.today(), S.today(Date.now()));
+  assert.strictEqual(S.isDue(k1), false);
+  S.setDev({ on: true });                                                     // açılınca kayıtlı değer geçerli
+  assert.deepStrictEqual(S.dev(), { on: true, off: 3 });
+  assert.ok(near(S.now(), Date.now() + 3 * D));
+  assert.strictEqual(S.isDue(k1), true);
+  S.setDev({ on: false });                                                    // kapatınca yine yok sayılır, değer silinmez
+  assert.deepStrictEqual(S.dev(), { on: false, off: 0 });
+  assert.ok(near(S.now(), Date.now()));
+  assert.deepStrictEqual(JSON.parse(localStorage.getItem("ox3000_dev_v1")), { on: false, off: 3 });   // kaldırılan hile ayarı düştü
+  S.setDev({ on: true });
+  assert.deepStrictEqual(S.dev(), { on: true, off: 3 });
+  S.setDev({ on: false, off: 0 });
+});
+
+t("günlük özet: cevap, doğru ve yeni sayıları", () => {
+  S.answer(k1, true, null, at(0));
+  S.answer(k2, false, null, at(0));
+  S.answer(k1, true, null, at(3));
+  const d = S.daily();
+  assert.deepStrictEqual(d[S.today(at(0))], { n: 2, ok: 1, nw: 2 });
+  assert.deepStrictEqual(d[S.today(at(3))], { n: 1, ok: 1, nw: 0 });
+});
+
+t("gün değişimi yerel gece 00:00", () => {
+  const L = (...a) => new Date(...a).getTime();   // yerel saat
+  S.answer(k1, false, null, L(2026, 0, 10, 23, 59));
+  assert.strictEqual(S.isDue(k1, L(2026, 0, 10, 23, 59, 59)), false);
+  assert.strictEqual(S.isDue(k1, L(2026, 0, 11, 0, 0, 1)), true);
+});
+
+t("seviye etiketi: listede bir üst seviyeden tek kelime girince değişir", () => {
+  assert.strictEqual(S.topLevel(), "A1");
+  const a1 = S.catalogFromGroups(groups).filter(x => x.lv === "A1").map(x => x.k);
+  a1.slice(0, a1.length - 100).forEach(k => S.answer(k, true, null, at(0)));
+  assert.strictEqual(S.topLevel(), "A1");     // liste tam son 100 A1
+  S.answer(a1[a1.length - 100], true, null, at(0));
+  assert.strictEqual(S.topLevel(), "A2");     // listeye 1 A2 girdi
+});
+
+t("kısım sayaçları: olgun · öğreniliyor · yeni", () => {
+  const ks = S.newList(3);
+  S.answer(ks[0], false, null, at(0));
+  S.answer(ks[1], true, null, at(0)); S.answer(ks[1], true, null, at(3)); S.answer(ks[1], true, null, at(10));
+  assert.deepStrictEqual(S.groupCounts(0), { mature: 1, learning: 1, fresh: 98, total: 100 });
+  assert.deepStrictEqual(S.groupCounts(1), { mature: 0, learning: 0, fresh: 100, total: 100 });
+  assert.strictEqual(S.totals().fresh, 2998);
+  [17, 31, 61].forEach(d => S.answer(ks[1], true, null, at(d)));             // olgun 7 de olgun sayılır
+  assert.strictEqual(S.level(ks[1]), 7);
+  assert.deepStrictEqual(S.groupCounts(0), { mature: 1, learning: 1, fresh: 98, total: 100 });
+  assert.strictEqual(S.totals().mature, 1);
+});
+
+t("veri kalıcı (yeniden yükleme sonrası aynı)", () => {
+  S.answer(k1, true, null, at(0));
+  S._reload();
+  assert.strictEqual(S.level(k1), 2);
+});
+
+t("sonraki vade günü", () => {
+  assert.strictEqual(S.nextDue(at(0)), null);
+  S.answer(k1, true, null, at(0));
+  assert.strictEqual(S.nextDue(at(0)), 3);
+});
+
+const W = w => { for (const g of groups) for (const it of g.items) if (it.w === w) return it; throw new Error(w); };
+const C = (w, dir, ins) => S.checkTyped(W(w), dir, ins);
+
+t("yazılı: kutu sayısı = anlam sayısı, parantezli not kutu açmaz", () => {
+  assert.strictEqual(S.answerSlots(W("live"), "en2tr").length, 2);       // yaşamak; canlı
+  assert.strictEqual(S.answerSlots(W("course"), "en2tr").length, 3);     // kurs; rota; yemek servisi
+  assert.strictEqual(S.answerSlots(W("reason"), "en2tr").length, 1);     // neden, sebep
+  assert.strictEqual(S.answerSlots(W("to"), "en2tr").length, 1);         // -e, -a; (mastar eki)
+  assert.strictEqual(S.answerSlots(W("live"), "tr2en").length, 1);
+});
+
+t("yazılı: harf büyüklüğü, noktalama, Türkçe harf farkı önemsiz", () => {
+  assert.ok(C("winter", "en2tr", ["KIŞ"]).ok);
+  assert.ok(C("winter", "en2tr", ["kis"]).ok);
+  assert.ok(C("winter", "en2tr", ["  Kış. "]).ok);
+  assert.ok(C("boring", "tr2en", ["Boring!"]).ok);
+  assert.ok(!C("winter", "en2tr", ["kiş yaz"]).ok);
+});
+
+t("yazılı: çok anlamlıda her anlam ayrı kutu, sıra serbest", () => {
+  assert.ok(C("live", "en2tr", ["yaşamak", "canlı"]).ok);
+  assert.ok(C("live", "en2tr", ["canli", "yasamak"]).ok);
+  const r = C("live", "en2tr", ["yaşamak", ""]);
+  assert.ok(!r.ok); assert.deepStrictEqual(r.marks, [true, false]);
+  assert.ok(!C("live", "en2tr", ["yaşamak", "yaşamak"]).ok);
+});
+
+t("yazılı: eş anlamlılardan biri yeterli, ikisi birlikte de olur", () => {
+  assert.ok(C("reason", "en2tr", ["sebep"]).ok);
+  assert.ok(C("reason", "en2tr", ["neden"]).ok);
+  assert.ok(C("reason", "en2tr", ["neden, sebep"]).ok);
+  assert.ok(!C("reason", "en2tr", ["neden, araba"]).ok);
+  assert.ok(C("paint", "en2tr", ["resim yapmak", "boya"]).ok);           // boya; boyamak, resim yapmak
+  assert.ok(C("grandparent", "en2tr", ["büyükbaba"]).ok);                // büyükanne/büyükbaba
+});
+
+t("yazılı: parantez ve tire yazılmasa da olur", () => {
+  assert.ok(C("he", "en2tr", ["o"]).ok);                                 // o (erkek)
+  assert.ok(C("he", "en2tr", ["o (erkek)"]).ok);
+  assert.ok(C("from", "en2tr", ["dan"]).ok);                             // -den, -dan
+  assert.ok(C("o'clock", "tr2en", ["oclock"]).ok);
+  assert.ok(C("a, an", "tr2en", ["an"]).ok);
+  assert.ok(C("ice cream", "tr2en", ["Ice-cream"]).ok);
+  assert.ok(C("last (final)", "tr2en", ["last"]).ok);
+});
+
+t("yazılı: başka kelimenin karşılığı ve yazım hatası kabul edilmez", () => {
+  assert.ok(!C("sick", "tr2en", ["ill"]).ok);
+  assert.ok(!C("receive", "tr2en", ["recieve"]).ok);
+  assert.ok(!C("winter", "en2tr", ["kışş"]).ok);
+});
+
+// ---- Hafıza dolu (kota): ilerleme sessizce kaybolmamalı ----
+// Sahte kota: toplam boyut sınırı aşılırsa setItem QuotaExceededError fırlatır.
+function kotaliDepo(sinir) {
+  const asil = global.localStorage.setItem;
+  global.localStorage.setItem = (k, v) => {
+    const top = Object.keys(mem).reduce((t, x) => t + (x === k ? 0 : mem[x].length), 0) + String(v).length;
+    if (top > sinir) { const e = new Error("dolu"); e.name = "QuotaExceededError"; throw e; }
+    mem[k] = String(v);
+  };
+  return () => { global.localStorage.setItem = asil; delete globalThis.OXLOG; };
+}
+
+t("hafıza dolu, kullanım kaydı var → kayıt kısaltılır, cevap yine kaydedilir", () => {
+  const buyukKayit = "x".repeat(4000);
+  mem["ox3000_log_v1"] = buyukKayit;
+  let acildi = 0;
+  globalThis.OXLOG = { add() {}, yerAc() { acildi++; mem["ox3000_log_v1"] = "[]"; return true; } };
+  const dolu = Object.keys(mem).reduce((t, x) => t + mem[x].length, 0);
+  const geri = kotaliDepo(dolu + 30);   // cevap kaydı ancak kullanım kaydı kısalınca sığar
+  try {
+    S.answer(k1, true, "en2tr", at(0));
+    S._reload();
+    assert.strictEqual(acildi, 1, "yer açılmalıydı");
+    assert.strictEqual(S.level(k1), 2, "cevap kaydedilmiş olmalı");
+    assert.strictEqual(S.sonKayitHatasi(), null);
+  } finally { geri(); delete mem["ox3000_log_v1"]; }
+});
+
+t("hafıza dolu, açılacak yer yok → hata kaydedilir ve görünür (sessiz değil)", () => {
+  const olaylar = [];
+  globalThis.OXLOG = { add(t, d) { olaylar.push([t, d]); }, yerAc() { return false; } };
+  const geri = kotaliDepo(10);
+  try {
+    const yazildi = S.yaz("ox3000_srs_v1", "{\"a\":1}");
+    assert.strictEqual(yazildi, false);
+    assert.ok(S.sonKayitHatasi(), "son hata tutulmalı");
+    assert.ok(olaylar.some(([t, d]) => t === "hata" && d.f === "kayit"), "kayda düşmeli");
+  } finally { geri(); }
+});
+
+// ---- çok anlamlı kelimeler ----
+const ITEM = { w: "course", tr: "kurs; rota; yemek servisi" };
+const KC = k1;   // kayıt anahtarı olarak katalogdan bir kelime (anlamları ITEM'den)
+const kutu = () => S.level(KC), bekleyen = () => S.pendingMeanings(KC, 3);
+
+t("anlamlar: ';' ile; yalnız parantezden oluşan not anlam değil", () => {
+  assert.deepStrictEqual(S.meanings(ITEM), ["kurs", "rota", "yemek servisi"]);
+  assert.deepStrictEqual(S.meanings({ tr: "-e, -a; (mastar eki)" }), ["-e, -a"]);
+  assert.deepStrictEqual(S.meanings({ tr: "elma" }), ["elma"]);
+});
+
+t("hepsi cevaplanmadan kutu değişmez; hepsi doğru → üst kutu, günlük sayı bir", () => {
+  assert.deepStrictEqual(bekleyen(), [0, 1, 2]);
+  assert.strictEqual(S.answerMeaning(KC, 0, true, 3, at(0)), null);
+  assert.strictEqual(S.isNew(KC), true, "karar yokken kelime hâlâ yeni");
+  assert.deepStrictEqual(bekleyen(), [1, 2]);
+  assert.strictEqual(S.answerMeaning(KC, 2, true, 3, at(0)), null);
+  const r = S.answerMeaning(KC, 1, true, 3, at(0));
+  assert.deepStrictEqual([r.from, r.to, r.yanlis], [0, 2, []]);
+  assert.deepStrictEqual(S.daily()[S.today(at(0))], { n: 1, ok: 1, nw: 1 });
+  assert.deepStrictEqual(bekleyen(), [0, 1, 2]);
+});
+
+t("kullanıcının örneği: kutu 3'te rota yanlış → 2; doğrular 4'e park; 2 ve 3'te yalnız rota; 4'te üçü", () => {
+  const s = {}; s[KC] = { b: 3, n: 2, l: 0, f: S.today(at(0)), due: S.today(at(0)), a: S.today(at(0)) };
+  mem.ox3000_srs_v1 = JSON.stringify(s); S._reload();
+  S.answerMeaning(KC, 0, true, 3, at(0)); S.answerMeaning(KC, 1, false, 3, at(0));
+  const r = S.answerMeaning(KC, 2, true, 3, at(0));
+  assert.deepStrictEqual([r.from, r.to, r.yanlis], [3, 2, [1]]);
+  assert.deepStrictEqual(bekleyen(), [1], "kutu 2: yalnız rota");
+  assert.deepStrictEqual(S.answerMeaning(KC, 1, true, 3, at(3)).to, 3);
+  assert.deepStrictEqual(bekleyen(), [1], "kutu 3: hâlâ yalnız rota (doğrular 4'te bekliyor)");
+  assert.deepStrictEqual(S.answerMeaning(KC, 1, true, 3, at(10)).to, 4);
+  assert.deepStrictEqual(bekleyen(), [0, 1, 2], "kutu 4: üçü birden");
+  assert.strictEqual(JSON.parse(mem.ox3000_srs_v1)[KC].pk, undefined);
+});
+
+t("yanlış sürdükçe kelime çıkamaz; park edilenler yerinde kalır", () => {
+  const s = {}; s[KC] = { b: 5, n: 4, l: 0, f: 0, due: S.today(at(0)), a: 0 };
+  mem.ox3000_srs_v1 = JSON.stringify(s); S._reload();
+  S.answerMeaning(KC, 0, true, 3, at(0)); S.answerMeaning(KC, 1, false, 3, at(0)); S.answerMeaning(KC, 2, false, 3, at(0));
+  assert.strictEqual(kutu(), 2, "olgunda yanlış → 2");
+  assert.deepStrictEqual(bekleyen(), [1, 2]);
+  S.answerMeaning(KC, 1, true, 3, at(1));
+  assert.strictEqual(S.answerMeaning(KC, 2, false, 3, at(1)).to, 1, "biri yanlış → yine iner");
+  assert.deepStrictEqual(bekleyen(), [2], "rota doğru bilindi: kurs gibi park (kutu 3'e)");
+  assert.deepStrictEqual(JSON.parse(mem.ox3000_srs_v1)[KC].pk, { 0: 6, 1: 3 });
+});
+
+t("yarım kalan tur saklanır; tekrar sorulmaz; sıfırlama siler", () => {
+  S.answerMeaning(KC, 1, false, 3, at(0));
+  S._reload();
+  assert.deepStrictEqual(bekleyen(), [0, 2]);
+  assert.strictEqual(S.isNew(KC), true, "karar yok: kayıt açılmadı");
+  S.reset();
+  assert.deepStrictEqual(bekleyen(), [0, 1, 2]);
+});
+
+t("eski kayıt (pk yok) geçerli: kutusu ve tarihi değişmeden bütün anlamlar sorulur", () => {
+  const s = {}; s[KC] = { b: 6, n: 5, l: 1, f: 1, due: 99999, a: 2 };
+  mem.ox3000_srs_v1 = JSON.stringify(s); S._reload();
+  assert.deepStrictEqual(bekleyen(), [0, 1, 2]);
+  assert.deepStrictEqual(JSON.parse(mem.ox3000_srs_v1)[KC], { b: 6, n: 5, l: 1, f: 1, due: 99999, a: 2 });
+});
+
+console.log(`\n${n} test geçti`);
