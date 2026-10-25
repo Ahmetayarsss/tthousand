@@ -1,10 +1,9 @@
 // Alttaki kısa bildirim: duyur(metin, ms). Tek yer, kökte (DuyuruAlani, _layout.js).
-// Yenisi öncekinin yerine geçer. Yeri sekme çubuğunun 22 px üstü (telefonun alt boşluğu dahil).
+// Yenisi öncekinin yerine geçer. Yeri ekranın altından 22 px yukarı (telefonun alt boşluğu dahil).
 import { useEffect, useRef, useState } from "react";
 import { Animated, StyleSheet, Text } from "react-native";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { useTema } from "../tema";
-import { CUBUK_BOY } from "./SekmeCubugu";
 
 let dinle = null;
 export function duyur(metin, ms = 2200) { if (dinle) dinle({ metin: String(metin), ms }); }
@@ -25,7 +24,7 @@ export function DuyuruAlani() {
   }, [gor]);
   if (!m) return null;
   return (
-    <Animated.View pointerEvents="none" style={[s.kap, { opacity: gor, bottom: CUBUK_BOY + 22 + alt }]}>
+    <Animated.View pointerEvents="none" style={[s.kap, { opacity: gor, bottom: 22 + alt }]}>
       <Text style={[s.yazi, { backgroundColor: t.solid, color: t.onSolid }]}>{m}</Text>
     </Animated.View>
   );

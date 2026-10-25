@@ -4,7 +4,7 @@
  *   - Açma: karta dokununca (dokunulan tarafın karşı kenarı menteşe) ya da "Aç" ile; kart Skia ile kıvrılarak
  *     döner (src/kartlar/Cevirme.js), kelime okunur.
  *   - Sınavda kuyruğun %10'u yazılı (altın kart): uygulama içi klavyeyle yazılır, sistem denetler.
- *   - Sınav sürerken çıkışta onay (Test'e geçiş, Bitir, başka sekme, geri tuşu). Cevaplar anında kaydedilir.
+ *   - Sınav sürerken çıkışta onay (Test'e geçiş, Bitir, başka sayfa, geri tuşu). Cevaplar anında kaydedilir.
  *   - Çok anlamlı kelime: her anlam ayrı kart (kimlik "anahtar#anlamNo", oturum.js); kartta yalnız o anlam görünür,
  *     ek anlamında ipucu. Yazılı kartta aynı Türkçe karşılığın başka kelimesi yazılırsa yanlış sayılmaz, yeniden
  *     sorulur.
@@ -329,7 +329,7 @@ export default function Kartlar() {
 
   return (
     <Kaydir ad="kartlar" kapali={yz}>
-    <SafeAreaView edges={["top"]} style={[s.ekran, { backgroundColor: t.kartBg }]}>
+    <SafeAreaView edges={["top", "bottom"]} style={[s.ekran, { backgroundColor: t.kartBg }]}>
       <View ref={kokRef} collapsable={false} style={s.kok}>
         <View style={s.uygulama}>
           <View style={[s.modlar, { backgroundColor: t.soft }]}>

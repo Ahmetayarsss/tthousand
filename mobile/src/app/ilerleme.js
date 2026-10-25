@@ -1,15 +1,14 @@
 /*
  * İlerleme: genel olgun/öğreniliyor/yeni,
- * seviyeye göre, 30 kısım, son sınavlar. Hesaplar src/ilerleme/veri.js'te. Alttaki bağlantı İstatistikler'i
- * açar (Ayarlar'dan sola kaydırarak da açılır). Kaydırma: sağa Kartlar.
+ * seviyeye göre, 30 kısım, son sınavlar. Hesaplar src/ilerleme/veri.js'te.
+ * Kaydırma: sağa Kartlar.
  */
 import { useFocusEffect } from "expo-router";
 import { useCallback, useState } from "react";
-import { Pressable, ScrollView, StyleSheet, Text, View } from "react-native";
+import { ScrollView, StyleSheet, Text, View } from "react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
 import Kaydir from "../bilesenler/Kaydir";
 import Pano from "../bilesenler/Pano";
-import { git } from "../gezinme";
 import { GRUPLAR, OXLOG, SRS } from "../cekirdek";
 import * as V from "../ilerleme/veri";
 import { OTURUM_ANAHTARI } from "../kartlar/oturum";
@@ -38,7 +37,7 @@ export default function Ilerleme() {
 
   return (
     <Kaydir ad="ilerleme">
-    <SafeAreaView edges={["top"]} style={{ flex: 1, backgroundColor: t.kartBg }}>
+    <SafeAreaView edges={["top", "bottom"]} style={{ flex: 1, backgroundColor: t.kartBg }}>
       <ScrollView contentContainerStyle={s.icerik}>
         <View style={s.ust}>
           <Text style={[s.h1, { color: t.ink }]} accessibilityRole="header">İlerleme</Text>
@@ -109,12 +108,6 @@ export default function Ilerleme() {
             </View>
           )) : <Text style={[s.bos, { color: t.muted }]}>Henüz sınav yapmadın. Çalışma sayfasında “Sınav”ı dene.</Text>}
         </Pano>
-
-        <Pressable onPress={() => git("analiz")} accessibilityRole="button"
-          style={({ pressed }) => [s.bag, { backgroundColor: t.card, borderColor: t.kartLine, opacity: pressed ? 0.7 : 1 }]}>
-          <Text style={[s.bagYazi, { color: t.ink }]}>Ayrıntılı istatistikler</Text>
-          <Text style={[s.bagOk, { color: t.muted }]}>›</Text>
-        </Pressable>
       </ScrollView>
     </SafeAreaView>
     </Kaydir>
@@ -152,7 +145,4 @@ const s = StyleSheet.create({
   sinavD: { flex: 1, fontSize: 11.5 },
   sinavP: { fontWeight: "800", fontSize: 15 },
   bos: { fontSize: 13, textAlign: "center", paddingVertical: 14 },
-  bag: { flexDirection: "row", alignItems: "center", borderWidth: 1, borderRadius: 14, paddingVertical: 14, paddingHorizontal: 16 },
-  bagYazi: { flex: 1, fontSize: 15, fontWeight: "800" },
-  bagOk: { fontSize: 22, fontWeight: "700" },
 });

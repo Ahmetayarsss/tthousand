@@ -118,7 +118,7 @@ export default function Arkadaslar() {
   if (!a) {
     return (
       <Kaydir ad="arkadas" kenar={kenar}>
-      <SafeAreaView edges={["top"]} style={[s.ekran, { backgroundColor: t.kartBg }]}>
+      <SafeAreaView edges={["top", "bottom"]} style={[s.ekran, { backgroundColor: t.kartBg }]}>
         <ScrollView contentContainerStyle={s.icerik} {...kenarProps}>
           <Text style={[s.h1, { color: t.ink }]} accessibilityRole="header">Arkadaşlar</Text>
           <Pano t={t}>
@@ -138,7 +138,7 @@ export default function Arkadaslar() {
 
   return (
     <Kaydir ad="arkadas" kenar={kenar}>
-    <SafeAreaView edges={["top"]} style={[s.ekran, { backgroundColor: t.kartBg }]}>
+    <SafeAreaView edges={["top", "bottom"]} style={[s.ekran, { backgroundColor: t.kartBg }]}>
       <ScrollView contentContainerStyle={s.icerik} keyboardShouldPersistTaps="handled" {...kenarProps}>
         <Text style={[s.h1, { color: t.ink }]} accessibilityRole="header">Arkadaşlar</Text>
 

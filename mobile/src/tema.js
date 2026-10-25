@@ -10,7 +10,7 @@ const ORTAK = {
 const ACIK = {
   ...ORTAK, koyu: false,
   bg: "#F5F6F8", card: "#fff", ink: "#1B2430", muted: "#7A8699", line: "#E7EAF0",
-  tr: "#B03A2E", ok: "#0E8074", en: "#33414F", ex: "#5B6B7B", field: "#fff", bar: "#fff",
+  tr: "#B03A2E", ok: "#0E8074", en: "#33414F", ex: "#5B6B7B", field: "#fff",
   solid: "#1B2430", onSolid: "#fff",
   // Kartlar sayfası
   kartBg: "#F4F6F9", kartLine: "#E6EAF1", yuzCizgi: "#c7d2e3", ayrac: "#D5DCE7", soft: "#E9EDF3",
@@ -28,7 +28,7 @@ const ACIK = {
 const KOYU = {
   ...ORTAK, koyu: true,
   bg: "#0F141B", card: "#19202A", ink: "#E4E9F0", muted: "#8D99AA", line: "#2B3542",
-  tr: "#EE8579", ok: "#3CC2B0", en: "#C5CDD8", ex: "#9AA6B6", field: "#222B36", bar: "#151B23",
+  tr: "#EE8579", ok: "#3CC2B0", en: "#C5CDD8", ex: "#9AA6B6", field: "#222B36",
   solid: "#2F3B4C", onSolid: "#F2F5F9",
   kartBg: "#0F141B", kartLine: "#2B3542", yuzCizgi: "#2B3542", ayrac: "#3A4554", soft: "#222B36",
   accent: "#5B8FD0", green: "#35A867", red: "#DE5F57", redKoyu: "#E87A72", scrim: "rgba(0,0,0,.6)",

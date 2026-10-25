@@ -47,7 +47,7 @@ export default function Analiz() {
   const bos = <Text style={[s.bos, { color: t.muted }]}>Kayıt yok</Text>;
   return (
     <Kaydir ad="analiz">
-    <SafeAreaView edges={["top"]} style={{ flex: 1, backgroundColor: t.kartBg }}>
+    <SafeAreaView edges={["top", "bottom"]} style={{ flex: 1, backgroundColor: t.kartBg }}>
     <ScrollView style={{ backgroundColor: t.kartBg }} contentContainerStyle={s.icerik} onScrollBeginDrag={() => setIp(null)}>
       {/* Grafiğin ya da düğmenin almadığı dokunuş ipucunu kapatır (grafikler ve düğmeler dokunuşu önce alır). */}
       <View onStartShouldSetResponder={() => true} onResponderRelease={() => setIp(null)}>

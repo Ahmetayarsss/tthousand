@@ -1,5 +1,4 @@
-// Alt sekmeler: Liste · Kartlar · İlerleme · Sözlük · Arkadaş · Ayarlar ve
-// çubukta görünmeyen İstatistikler (analiz). Çubuk: SekmeCubugu. Geri tuşu bir önceki sayfaya
+// Ekranlar: Liste · Kartlar · İlerleme · Sözlük · Arkadaş · Ayarlar · İstatistikler (analiz), görünür çubuk yok. Geri tuşu bir önceki sayfaya
 // döner (fullHistory: gezilen sayfaların sırası); sayfalar arası kaydırma ekranlarda (Kaydir, gezinme.js).
 // Kökte bir kez: ortadaki pencere (karşılama, onaylar), alttaki kısa bildirimler, ilk açılışta sayfa haritası.
 import "../cekirdek";
@@ -11,7 +10,6 @@ import { GestureHandlerRootView } from "react-native-gesture-handler";
 import { StatusBar } from "expo-status-bar";
 import { DuyuruAlani } from "../bilesenler/Duyuru";
 import { PencereAlani } from "../bilesenler/Pencere";
-import SekmeCubugu from "../bilesenler/SekmeCubugu";
 import { OXLOG } from "../cekirdek";
 import { git } from "../gezinme";
 import { bildirimHedefi } from "../hesap";
@@ -38,7 +36,7 @@ export default function Duzen() {
   return (
     <GestureHandlerRootView style={{ flex: 1, backgroundColor: t.bg }}>
       <StatusBar style={t.koyu ? "light" : "dark"} />
-      <Tabs backBehavior="fullHistory" tabBar={(p) => <SekmeCubugu {...p} />} screenOptions={{ headerShown: false }}>
+      <Tabs backBehavior="fullHistory" tabBar={() => null} screenOptions={{ headerShown: false }}>
         {EKRANLAR.map((ad) => <Tabs.Screen key={ad} name={ad} />)}
       </Tabs>
       <DuyuruAlani />

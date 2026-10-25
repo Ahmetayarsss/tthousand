@@ -136,7 +136,7 @@ export default function Liste() {
   const kutlama = (!anahtarlar.length && baslik !== "") || kutla === "1";
   return (
     <Kaydir ad="index">
-    <SafeAreaView edges={["top"]} style={[s.ekran, { backgroundColor: t.bg }]}>
+    <SafeAreaView edges={["top", "bottom"]} style={[s.ekran, { backgroundColor: t.bg }]}>
       <View style={[s.ust, { borderBottomColor: t.line }]}>
         <Text style={[s.baslik, { color: t.ink }]} accessibilityRole="header">{baslik}</Text>
         {kutlama ? null : (

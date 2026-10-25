@@ -35,7 +35,7 @@ export default function Sozluk() {
 
   return (
     <Kaydir ad="sozluk" kenar={q.trim() ? kenar : { ust: true, alt: true }}>
-    <SafeAreaView edges={["top"]} style={[s.ekran, { backgroundColor: t.bg }]}>
+    <SafeAreaView edges={["top", "bottom"]} style={[s.ekran, { backgroundColor: t.bg }]}>
       <View style={[s.ust, { borderBottomColor: t.line }]}>
         <Text style={[s.baslik, { color: t.ink }]} accessibilityRole="header">Sözlük</Text>
         <TextInput value={q} onChangeText={setQ} accessibilityLabel="Sözlükte ara (İngilizce ya da Türkçe)"

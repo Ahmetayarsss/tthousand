@@ -112,7 +112,7 @@ export default function Ayarlar() {
 
   return (
     <Kaydir ad="ayarlar" kenar={kenar}>
-    <SafeAreaView edges={["top"]} style={[s.ekran, { backgroundColor: t.kartBg }]}>
+    <SafeAreaView edges={["top", "bottom"]} style={[s.ekran, { backgroundColor: t.kartBg }]}>
       <ScrollView contentContainerStyle={s.icerik} {...kenarProps}>
         <Pressable onPress={baslikDokun}><Text style={[s.h1, { color: t.ink }]} accessibilityRole="header">Ayarlar</Text></Pressable>
 
