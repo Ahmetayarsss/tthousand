@@ -62,25 +62,38 @@ function seriler(SRS) {
   while (set.has(d)) { simdi++; d--; }
   return { simdi, enUzun, bugun: set.has(T) };
 }
-// Tahmini bitiş: son 14 günün yeni kelime ortalamasıyla kalan yeni kelimeler.
-function bitisTahmini(SRS) {
-  const yeni = SRS.totals().fresh;
-  if (!yeni) return { bitti: true };
-  const T = SRS.today(), DL = SRS.daily();
-  let nw = 0;
-  for (let d = T - 13; d <= T; d++) nw += (DL[d] && DL[d].nw) || 0;
-  const gunde = nw / 14;
-  if (gunde <= 0) return { yok: true, yeni };
-  const gun = Math.ceil(yeni / gunde);
-  return { gun, tarih: T + gun, gunde, yeni };
+// Tahmini bitiş (bütün kelimeler olgun): ilk sınav gününden beri günde ortalama sınav kartıyla kalan kartlar.
+function bitisTahmini(SRS, anlamSay = () => 1) {
+  const tot = SRS.totals();
+  if (!tot.fresh && !tot.learning) return { bitti: true };
+  const T = SRS.today(), DL = SRS.daily(), R = SRS.records(), IV = SRS.IV;
+  const kartOf = (e) => (e ? (e.k != null ? e.k : e.n) : 0);
+  const gunler = Object.keys(DL).map(Number).filter((d) => d <= T && kartOf(DL[d]) > 0);
+  if (!gunler.length) return { yok: true };
+  const ilk = Math.min(...gunler), son = kartOf(DL[T]) ? T : T - 1;
+  let kart = 0, n = 0, ok = 0;
+  gunler.forEach((d) => { if (d <= son) { kart += kartOf(DL[d]); n += DL[d].n; ok += DL[d].ok; } });
+  const ort = kart / Math.max(1, son - ilk + 1);
+  const p = Math.min(1, Math.max(0.3, n ? ok / n : 1));
+  const E2 = (1 + p + (1 - p) / p) / (p * p), E3 = 1 + (1 - p) * E2, E1 = 1 / p + E2;
+  const E = [1 + p * E2 + (1 - p) * E1, E1, E2, E3];
+  let kalan = 0, enErken = tot.fresh ? T + IV[2] + IV[3] : T;
+  for (let i = 0; i < tot.total; i++) {
+    const k = SRS.catalogKey(i), r = R[k], b = r ? r.b : 0;
+    if (b >= 4) continue;
+    kalan += E[b] * anlamSay(k);
+    if (r) enErken = Math.max(enErken, Math.max(r.due, T) + (b === 1 ? IV[2] + IV[3] : b === 2 ? IV[3] : 0));
+  }
+  const tarih = Math.max(T + Math.ceil(kalan / ort), enErken);
+  return { tarih, gun: tarih - T, ort, kalan: Math.round(kalan) };
 }
 // Genel kutucuklar: [başlık, değer, açıklama]
-function kutucuklar(SRS) {
+function kutucuklar(SRS, anlamSay) {
   const DL = SRS.daily(), g30 = son30(SRS);
   let n = 0, ok = 0, n30 = 0, ok30 = 0;
   for (const d in DL) { n += DL[d].n; ok += DL[d].ok; }
   g30.forEach((x) => { n30 += x.n; ok30 += x.ok; });
-  const st = seriler(SRS), fe = bitisTahmini(SRS), tot = SRS.totals();
+  const st = seriler(SRS), fe = bitisTahmini(SRS, anlamSay), tot = SRS.totals();
   return [
     ["Toplam cevap", sayi(n), "Son 30 gün: " + sayi(n30)],
     ["Doğruluk", n ? "%" + Math.round((ok / n) * 100) : "—", n30 ? "Son 30 gün: %" + Math.round((ok30 / n30) * 100) : "Son 30 gün: —"],
@@ -88,7 +101,7 @@ function kutucuklar(SRS) {
     ["En uzun seri", st.enUzun + " gün", ""],
     ["Çalışılan", sayi(tot.mature + tot.learning), "Olgun: " + sayi(tot.mature)],
     ["Tahmini bitiş", fe.bitti ? "Bitti" : fe.yok ? "—" : gunAyYil(SRS, fe.tarih),
-      fe.bitti ? "Tüm kelimeler çalışılıyor" : fe.yok ? "Son 14 günde yeni kelime yok" : "≈" + sayi(fe.gun) + " gün · günde ort. " + fe.gunde.toFixed(1).replace(".", ",") + " yeni"],
+      fe.bitti ? "Tüm kelimeler olgun" : fe.yok ? "Henüz sınav yok" : "≈" + sayi(fe.gun) + " gün · günde ort. " + fe.ort.toFixed(1).replace(".", ",") + " kart"],
   ];
 }
 // Katalogdaki kayıtlar: [{k, b, due, l, …}]

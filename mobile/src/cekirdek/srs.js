@@ -144,7 +144,7 @@
   function dirOf(k) { var r = rec(k); return (r && r.d) || null; }
 
   // Sınav cevabı. dir: o an sorulan yön (yanlışsa kilitlenir).
-  function answer(k, ok, dir, now) {
+  function answer(k, ok, dir, now, kartSayildi) {
     var s = load(), r = s[k], t = today(now), from = r ? r.b : 0, to;
     if (!r) { to = ok ? 2 : 1; r = { b: to, n: 0, l: 0, f: t }; }
     else { to = ok ? Math.min(BMAX, r.b + 1) : Math.max(1, Math.min(r.b, 3) - 1); r.b = to; }
@@ -152,7 +152,7 @@
     r.due = t + IV[to]; r.a = t;
     s[k] = r; save();
     var dl = getJ(DAYK, {}) || {}, e = dl[t] || (dl[t] = { n: 0, ok: 0, nw: 0 });   // günlük özet (istatistik)
-    e.n++; if (ok) e.ok++; if (!from) e.nw++; setJ(DAYK, dl);
+    e.n++; if (ok) e.ok++; if (!from) e.nw++; if (!kartSayildi) e.k = (e.k || 0) + 1; setJ(DAYK, dl);
     return { from: from, to: to, due: r.due };
   }
 
@@ -180,10 +180,12 @@
   function answerMeaning(k, i, ok, n, now) {
     var pa = getJ(PARKEY, {}) || {}, p = pa[k] || (pa[k] = {}), r0 = rec(k), tur = turAnlamlari(r0, n);
     p[i] = ok ? 1 : 0;
+    var dl = getJ(DAYK, {}) || {}, t = today(now), e = dl[t] || (dl[t] = { n: 0, ok: 0, nw: 0 });
+    e.k = (e.k || 0) + 1; setJ(DAYK, dl);
     if (tur.some(function (j) { return !(j in p); })) { setJ(PARKEY, pa); return null; }
     var hepsi = tur.every(function (j) { return p[j] === 1; }), from = r0 ? r0.b : 0;
     var hedef = from ? Math.min(BMAX, from + 1) : 2;   // hepsi doğru olsaydı çıkacağı kutu
-    var res = answer(k, hepsi, "tr2en", now), r = load()[k], pk = r.pk || {};
+    var res = answer(k, hepsi, "tr2en", now, true), r = load()[k], pk = r.pk || {};
     if (hepsi) { for (var j in pk) if (pk[j] <= r.b) delete pk[j]; }
     else tur.forEach(function (j) { if (p[j] === 1) pk[j] = hedef; });
     if (Object.keys(pk).length) r.pk = pk; else delete r.pk;

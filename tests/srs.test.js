@@ -207,8 +207,8 @@ t("günlük özet: cevap, doğru ve yeni sayıları", () => {
   S.answer(k2, false, null, at(0));
   S.answer(k1, true, null, at(3));
   const d = S.daily();
-  assert.deepStrictEqual(d[S.today(at(0))], { n: 2, ok: 1, nw: 2 });
-  assert.deepStrictEqual(d[S.today(at(3))], { n: 1, ok: 1, nw: 0 });
+  assert.deepStrictEqual(d[S.today(at(0))], { n: 2, ok: 1, nw: 2, k: 2 });
+  assert.deepStrictEqual(d[S.today(at(3))], { n: 1, ok: 1, nw: 0, k: 1 });
 });
 
 t("gün değişimi yerel gece 00:00", () => {
@@ -355,7 +355,7 @@ t("anlamlar: ';' ile; yalnız parantezden oluşan not anlam değil", () => {
   assert.deepStrictEqual(S.meanings({ tr: "elma" }), ["elma"]);
 });
 
-t("hepsi cevaplanmadan kutu değişmez; hepsi doğru → üst kutu, günlük sayı bir", () => {
+t("hepsi cevaplanmadan kutu değişmez; hepsi doğru → üst kutu, günlük sayı bir, kart üç", () => {
   assert.deepStrictEqual(bekleyen(), [0, 1, 2]);
   assert.strictEqual(S.answerMeaning(KC, 0, true, 3, at(0)), null);
   assert.strictEqual(S.isNew(KC), true, "karar yokken kelime hâlâ yeni");
@@ -363,7 +363,7 @@ t("hepsi cevaplanmadan kutu değişmez; hepsi doğru → üst kutu, günlük say
   assert.strictEqual(S.answerMeaning(KC, 2, true, 3, at(0)), null);
   const r = S.answerMeaning(KC, 1, true, 3, at(0));
   assert.deepStrictEqual([r.from, r.to, r.yanlis], [0, 2, []]);
-  assert.deepStrictEqual(S.daily()[S.today(at(0))], { n: 1, ok: 1, nw: 1 });
+  assert.deepStrictEqual(S.daily()[S.today(at(0))], { n: 1, ok: 1, nw: 1, k: 3 });
   assert.deepStrictEqual(bekleyen(), [0, 1, 2]);
 });
 

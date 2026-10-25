@@ -33,7 +33,7 @@ export default function Analiz() {
   useFocusEffect(useCallback(() => {
     const kay = V.kayitlar(SRS, ANAHTARLA), lv = SRS.topLevel();
     setV({
-      baslik: SRS.inCycle() + (lv ? " · " + lv : ""), kutucuk: V.kutucuklar(SRS), gun: V.son30(SRS),
+      baslik: SRS.inCycle() + (lv ? " · " + lv : ""), kutucuk: V.kutucuklar(SRS, (k) => (ANAHTARLA[k] ? Math.max(1, SRS.meanings(ANAHTARLA[k].d).length) : 1)), gun: V.son30(SRS),
       kutu: V.kutuDagilimi(kay), yedi: V.yediGun(SRS, kay), yanlis: V.enCokYanlis(kay),
     });
     setIp(null);

@@ -139,7 +139,7 @@ t("sınav: çok anlamlı kelime turu — sayılar kelime başına, karar hepsi c
   assert.deepStrictEqual(o.ot.yanlis, [COK]);
   assert.strictEqual(S.level(COK), 1);
   assert.strictEqual(S.level(IKI), 2);
-  assert.deepStrictEqual(S.daily()[S.today()], { n: 2, ok: 1, nw: 2 });
+  assert.deepStrictEqual(S.daily()[S.today()], { n: 2, ok: 1, nw: 2, k: 5 });
 });
 
 t("sınav yarıda bırakıldı: cevaplanan anlamlar bir daha gelmez, kelime yeni kalır", () => {

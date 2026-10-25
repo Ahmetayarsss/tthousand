@@ -49,12 +49,43 @@ t("seri: art arda günler; bugün çalışılmadıysa dünden sayılır", () => 
   assert.deepStrictEqual(V.seriler(S), { simdi: 4, enUzun: 4, bugun: true });
 });
 
-t("tahmini bitiş: son 14 günün yeni kelime ortalaması", () => {
+t("tahmini bitiş: ilk gün o günün kartları ortalama", () => {
   assert.ok(V.bitisTahmini(S).yok);
   for (let i = 0; i < 14; i++) S.answer(S.newList(1)[0], true, "en2tr", once(0));
   const b = V.bitisTahmini(S);
-  assert.strictEqual(b.gunde, 1);
-  assert.strictEqual(b.gun, 2986);
+  assert.strictEqual(b.ort, 14);
+  assert.strictEqual(b.kalan, 14 * 2 + 2986 * 3);
+  assert.strictEqual(b.gun, Math.ceil(b.kalan / 14));
+});
+
+t("tahmini bitiş: ortalama ilk günden bugüne (çalışılmayan gün 0, bugün çalışılmadıysa dünkü)", () => {
+  for (let i = 0; i < 10; i++) S.answer(S.newList(1)[0], true, "en2tr", once(3));
+  assert.strictEqual(V.bitisTahmini(S).ort, 10 / 3);
+  for (let i = 0; i < 30; i++) S.answer(S.newList(1)[0], true, "en2tr", once(0));
+  assert.strictEqual(V.bitisTahmini(S).ort, 10);
+});
+
+t("tahmini bitiş: yanlışlar kalan kartı artırır, kutu süreleri en erken tarihi belirler", () => {
+  const k = S.newList(4);
+  S.answer(k[0], true, "en2tr", once(0)); S.answer(k[1], false, "en2tr", once(0));
+  const b = V.bitisTahmini(S);
+  assert.ok(b.kalan > 2 + 3 + 2998 * 3, String(b.kalan));
+  for (let i = 0; i < 3000; i++) S.answer(S.catalogKey(i), true, "en2tr", once(0));
+  assert.ok(V.bitisTahmini(S).gun >= 10);
+});
+
+t("tahmini bitiş: hepsi olgunsa bitti; çok anlamlıda her anlam bir kart", () => {
+  const R = {};
+  for (let i = 0; i < 3000; i++) R[S.catalogKey(i)] = { b: 4, n: 3, l: 0, f: 0, due: S.today() + 7 };
+  localStorage.setItem("ox3000_srs_v1", JSON.stringify(R)); S._reload();
+  assert.ok(V.bitisTahmini(S).bitti);
+  S.reset();
+  const k = S.newList(1)[0];
+  assert.strictEqual(S.answerMeaning(k, 0, true, 2), null);
+  S.answerMeaning(k, 1, true, 2);
+  const g = S.daily()[S.today()];
+  assert.deepStrictEqual([g.k, g.n], [2, 1]);
+  assert.strictEqual(V.bitisTahmini(S, (x) => (x === k ? 2 : 1)).ort, 2);
 });
 
 t("kutucuklar: toplam cevap ve doğruluk", () => {
