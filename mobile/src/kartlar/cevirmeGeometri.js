@@ -14,7 +14,7 @@
  * Fonksiyonlar Reanimated worklet'idir (UI iş parçacığında her karede çalışır) ama düz JS: Node'da da çalışır.
  */
 const T = 650, PHI = 0.75, PAD = 64, NX = 64;
-const NY = 24;    // dikey bölme (Skia için; bkz. yukarı)
+const NY = 8;    // dikey bölme (Skia için; bkz. yukarı)
 const PAY = 4;    // yakalanan yüzün çevresindeki saydam pay (px)
 
 function yumusak(x) {

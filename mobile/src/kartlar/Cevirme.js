@@ -68,23 +68,18 @@ export default forwardRef(function Cevirme(_, ref) {
   const kare = useDerivedValue(() => (g.value ? cevirmeKaresi(g.value, p.value) : ilk), [ilk]);
   const noktalar = useDerivedValue(() => (kare.value ? kare.value.noktalar : []));
   const sira = useDerivedValue(() => (kare.value ? kare.value.sira : []));
-  const onGor = useDerivedValue(() => (kare.value && !kare.value.arka ? 1 : 0));
-  const arkaGor = useDerivedValue(() => (kare.value && kare.value.arka ? 1 : 0));
+  const arkaMi = useDerivedValue(() => !!(kare.value && kare.value.arka));
+  const dokuOn = is ? is.dokuOn : null, dokuArka = is ? is.dokuArka : null, resimOn = is ? is.on : null, resimArka = is ? is.arka : null;
+  const doku = useDerivedValue(() => (arkaMi.value ? dokuArka : dokuOn), [dokuOn, dokuArka]);
+  const resim = useDerivedValue(() => (arkaMi.value ? resimArka : resimOn), [resimOn, resimArka]);
 
   if (!is) return null;
   return (
     <Canvas style={StyleSheet.absoluteFill} pointerEvents="none">
       <Group clip={is.klip}>
-      <Group opacity={onGor}>
-        <Vertices vertices={noktalar} textures={is.dokuOn} indices={sira} mode="triangles">
-          <ImageShader image={is.on} sampling={ORNEKLEME} />
+        <Vertices vertices={noktalar} textures={doku} indices={sira} mode="triangles">
+          <ImageShader image={resim} sampling={ORNEKLEME} />
         </Vertices>
-      </Group>
-      <Group opacity={arkaGor}>
-        <Vertices vertices={noktalar} textures={is.dokuArka} indices={sira} mode="triangles">
-          <ImageShader image={is.arka} sampling={ORNEKLEME} />
-        </Vertices>
-      </Group>
       </Group>
     </Canvas>
   );
