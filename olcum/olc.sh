@@ -47,13 +47,19 @@ adb exec-out screencap -p > "$CIKTI/kartlar.png"
 
 metinler kartlar; saga; metinler "saga1"; saga; metinler "saga2"; asagi; metinler "asagi"
 adb exec-out screencap -p > "$CIKTI/ayarlar.png"
-BASARI=0
-for i in 1 2 3 4 5 6; do
-  var "Kullanım kayıtlarını gönder" || { asagi; }
-  metinler "tur$i basi"; firlat; metinler "tur$i firlat sonrasi"; yukari; metinler "tur$i yukari sonrasi"
-  if bekle "Sözlükte ara (İngilizce ya da Türkçe)" 3; then BASARI=$((BASARI + 1)); asagi; else adb exec-out screencap -p > "$CIKTI/ayarlar-kaldi-$i.png"; fi
+BASARI=0; ALTTA=0
+asagi_firlat() { for _ in 1 2 3; do adb shell input swipe $((W / 2)) $((H * 25 / 100)) $((W / 2)) $((H * 85 / 100)) 120; sleep 0.4; done; sleep 2; }
+for i in 1 2 3 4 5 6 7 8; do
+  var "Sonra" && { dokun "Sonra"; sleep 1; }
+  if ! var "GİZLİLİK"; then var "Sözlük" || asagi; asagi; fi
+  asagi_firlat
+  adb shell input swipe $((W / 2)) $((H * 90 / 100)) $((W / 2)) $((H * 8 / 100)) 80; sleep 3
+  if var "Telefon ayarları" || var "Bildirim izni kapalı"; then ALTTA=$((ALTTA + 1)); A=1; else A=0; fi
+  yukari
+  if bekle "Sözlükte ara (İngilizce ya da Türkçe)" 3; then BASARI=$((BASARI + 1)); S=1; asagi; else S=0; fi
+  echo "tur $i: en altta=$A sozluk=$S"
 done
-echo "AYARLAR_SOZLUK $BASARI/6" | tee "$CIKTI/ayarlar.txt"
+echo "AYARLAR_SOZLUK $BASARI/8 (en alta inilen tur: $ALTTA)" | tee "$CIKTI/ayarlar.txt"
 adb logcat -d > "$CIKTI/logcat.txt"
 grep -o "OLCUM .*" "$CIKTI/logcat.txt" > "$CIKTI/olcum.txt"
 python3 - "$CIKTI" <<'PY'
