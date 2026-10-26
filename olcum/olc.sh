@@ -21,6 +21,10 @@ sola() { adb shell input swipe $((W * 85 / 100)) $((H / 2)) $((W * 20 / 100)) $(
 saga() { adb shell input swipe $((W * 15 / 100)) $((H / 2)) $((W * 80 / 100)) $((H / 2 + 10)) 250; sleep 1.5; }
 asagi() { adb shell input swipe $((W / 2)) $((H * 30 / 100)) $((W / 2)) $((H * 60 / 100)) 250; sleep 1.5; }
 yukari() { adb shell input swipe $((W / 2)) $((H * 65 / 100)) $((W / 2)) $((H * 35 / 100)) 250; sleep 1.5; }
+metinler() { echo "--- $1:"; ekran | python3 -c '
+import re, sys, html
+x = sys.stdin.read()
+print(" | ".join(html.unescape(t) for t in re.findall(r" text=\"([^\"]+)\"", x))[:600])'; }
 firlat() { for _ in 1 2 3; do adb shell input swipe $((W / 2)) $((H * 80 / 100)) $((W / 2)) $((H * 20 / 100)) 120; sleep 0.3; done; sleep 2.5; }
 
 for a in window_animation_scale transition_animation_scale animator_duration_scale; do adb shell settings put global $a 1; done
@@ -34,19 +38,19 @@ sleep 1
 sola; bekle "Aç" 10 || echo "Kartlar açılmadı"
 sleep 2
 adb shell dumpsys gfxinfo "$PAKET" reset > /dev/null
-for i in $(seq 1 12); do
+for i in $(seq 1 ${CEVIRME:-12}); do
   dokun "Aç"; sleep 1.6
   dokun "Biliyorum"; sleep 1.6
 done
 adb shell dumpsys gfxinfo "$PAKET" > "$CIKTI/gfxinfo.txt"
 adb exec-out screencap -p > "$CIKTI/kartlar.png"
 
-saga; saga; asagi
+metinler kartlar; saga; metinler "saga1"; saga; metinler "saga2"; asagi; metinler "asagi"
 adb exec-out screencap -p > "$CIKTI/ayarlar.png"
 BASARI=0
 for i in 1 2 3 4 5 6; do
   var "Kullanım kayıtlarını gönder" || { asagi; }
-  firlat; yukari
+  metinler "tur$i basi"; firlat; metinler "tur$i firlat sonrasi"; yukari; metinler "tur$i yukari sonrasi"
   if bekle "Sözlükte ara (İngilizce ya da Türkçe)" 3; then BASARI=$((BASARI + 1)); asagi; else adb exec-out screencap -p > "$CIKTI/ayarlar-kaldi-$i.png"; fi
 done
 echo "AYARLAR_SOZLUK $BASARI/6" | tee "$CIKTI/ayarlar.txt"

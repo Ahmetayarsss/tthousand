@@ -9,10 +9,7 @@ jobs:
       fail-fast: false
       matrix:
         surum:
-          - { ad: A-eski, ref: f6ab8e16e62804bfbdbce8182a9389ae1c3e14b5 }
-          - { ad: B-simdiki, ref: 0844f57326b96e5fb24743abee3a094c5c93df76 }
-          - { ad: C1, ref: 516a8a7b5f3fcffd0107ef6a58fe7c93877023ba }
-          - { ad: C2, ref: 4383065e2eaafe192bbd94975c3590dfc15dfd8c }
+          - { ad: main, ref: 82181f78fade03b4cb4b20ccf41e80f51759a203 }
     steps:
       - uses: actions/checkout@v4
       - uses: actions/checkout@v4
@@ -43,7 +40,7 @@ jobs:
           arch: x86_64
           target: google_apis
           disable-animations: false
-          script: bash olcum/olc.sh app/mobile/android/app/build/outputs/apk/release/app-release.apk "$RUNNER_TEMP/olc"
+          script: CEVIRME=2 bash olcum/olc.sh app/mobile/android/app/build/outputs/apk/release/app-release.apk "$RUNNER_TEMP/olc"
       - if: always()
         run: cat "$RUNNER_TEMP/olc/ozet.txt" >> "$GITHUB_STEP_SUMMARY" || true
       - if: always()
