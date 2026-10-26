@@ -114,7 +114,7 @@ export default function Kartlar() {
   function ustHazir() {
     D.side = 0; D.acik = false; D.ustYuz = "on"; D.tPrompt = performance.now();
     yaziliKur();
-    D.hazir = null;
+    D.hazir = null; D.hazirSoz = null;
     if (cur()) setYakala({ k: cur(), nesil: D.nesil, once: true });
   }
   function desteKur() {
@@ -159,8 +159,11 @@ export default function Kartlar() {
     if (D.side === 1 || D.busy || !cur()) return;
     D.side = 1;
     const k = cur(), s = rx >= 0.5 ? -1 : 1, h = D.hazir;
-    if (h && h.k === k && h.nesil === D.nesil && h.t === t) cevir({ k, s, nesil: D.nesil }, h);
-    else setYakala({ k, s, nesil: D.nesil });
+    const y = { k, s, nesil: D.nesil }, bekleyenYakala = D.hazirSoz;
+    if (h && h.k === k && h.nesil === D.nesil && h.t === t) cevir(y, h);
+    else if (bekleyenYakala && bekleyenYakala.k === k && bekleyenYakala.nesil === D.nesil) {
+      bekleyenYakala.soz.then((x) => { if (D.nesil !== y.nesil || cur() !== k) return; if (x) cevir(y, x); else setYakala(y); });
+    } else setYakala(y);
   }
   const acildi = useCallback((nesil) => {
     D.hazir = null;
@@ -187,7 +190,10 @@ export default function Kartlar() {
     const r = requestAnimationFrame(() => requestAnimationFrame(async () => {
       if (iptal) return;
       if (!yakala.once) { cevir(yakala, null, () => iptal); return; }
-      const h = cevirRef.current ? await cevirRef.current.hazirla(onYakRef, arkaYakRef) : null;
+      const soz = cevirRef.current ? cevirRef.current.hazirla(onYakRef, arkaYakRef) : Promise.resolve(null);
+      D.hazirSoz = { k: yakala.k, nesil: yakala.nesil, soz };
+      const h = await soz;
+      if (D.hazirSoz && D.hazirSoz.soz === soz) D.hazirSoz = null;
       if (iptal) return;
       if (h && yakala.k === cur() && yakala.nesil === D.nesil && D.side === 0) D.hazir = { ...h, k: yakala.k, nesil: yakala.nesil, t };
       setYakala((x) => (x === yakala ? null : x));

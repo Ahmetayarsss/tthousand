@@ -45,16 +45,19 @@ export function useKenar() {
   const [kenar, setKenar] = useState({ ust: true, alt: true });
   const o = useRef({ y: 0, h: 0, c: 0 });
   const guncelle = useCallback(() => {
-    const { y, h, c } = o.current, u = y <= 0, a = y + h >= c - 2;
+    const { y, h, c } = o.current, u = y <= 4, a = y + h >= c - 8;
     setKenar((x) => (x.ust === u && x.alt === a ? x : { ust: u, alt: a }));
   }, []);
+  const kaydirildi = (e) => {
+    const n = e.nativeEvent;
+    o.current = { y: n.contentOffset.y, h: n.layoutMeasurement.height, c: n.contentSize.height };
+    guncelle();
+  };
   const props = {
     scrollEventThrottle: 32,
-    onScroll: (e) => {
-      const n = e.nativeEvent;
-      o.current = { y: n.contentOffset.y, h: n.layoutMeasurement.height, c: n.contentSize.height };
-      guncelle();
-    },
+    onScroll: kaydirildi,
+    onScrollEndDrag: kaydirildi,
+    onMomentumScrollEnd: kaydirildi,
     onLayout: (e) => { o.current.h = e.nativeEvent.layout.height; guncelle(); },
     onContentSizeChange: (w, h) => { o.current.c = h; guncelle(); },
   };
