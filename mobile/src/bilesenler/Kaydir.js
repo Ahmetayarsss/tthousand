@@ -1,8 +1,8 @@
 /*
  * Parmakla sayfa değiştirme: ekranın içeriğini sarar; nereye
- * gidileceği gezinme.js → KOMSU'da. Kurallar: parmak 800 ms içinde kalkmalı; yatayda en az 70 px ve
- * dikeyin 1,8 katı; dikeyde en az 90 px ve yatayın 1,8 katı, yalnız sayfa en üstteyken aşağı çekince / en alttayken
- * yukarı itince (kenar: useKenar). Yatay kaydırma başlayınca karta dokunma sayılmaz (dokunma iptal olur).
+ * gidileceği gezinme.js → KOMSU'da. Kurallar: yatayda en az 50 px (hızlı fiskede 20 px) ve dikeyin 1,2 katı;
+ * dikeyde en az 60 px (hızlı fiskede 25 px) ve yatayın 1,2 katı, yalnız sayfa en üstteyken aşağı çekince / en
+ * alttayken yukarı itince (kenar: useKenar). Yatay kaydırma başlayınca karta dokunma sayılmaz (dokunma iptal olur).
  * Dikey kaydırma sayfa kenardayken çabuk (6 px) devralınır, yoksa listenin kendi kaydırması alır.
  * kapali: kaydırma yok (ör. yazılı kartın klavyesi açıkken).
  * kaydirmayiEngelle(): sürgü gibi kendi kaydırması olan parça kullanılırken çağrılır; o sırada sayfa değişmez.
@@ -20,19 +20,20 @@ export default function Kaydir({ ad, kenar, kapali, children }) {
   const pan = usePanGesture({
     runOnJS: true,
     enabled: !kapali,
-    activeOffsetX: [-25, 25],
+    activeOffsetX: [-15, 15],
     activeOffsetY: ust && alt ? [-6, 6] : ust ? 6 : alt ? -6 : undefined,
-    onBegin: () => { bas.current = { t: Date.now(), ust, alt }; },
+    onBegin: () => { bas.current = { ust, alt }; },
     onDeactivate: (e) => {
       const b = bas.current;
       bas.current = null;
-      if (!b || e.canceled || Date.now() - b.t > 800 || Date.now() - engel < 1000) return;
-      const dx = e.translationX, dy = e.translationY;
-      if (Math.abs(dy) >= 90 && Math.abs(dy) > Math.abs(dx) * 1.8) {
+      if (!b || e.canceled || Date.now() - engel < 1000) return;
+      const dx = e.translationX, dy = e.translationY, ax = Math.abs(dx), ay = Math.abs(dy);
+      if (ay > ax * 1.2) {
+        if (ay < 60 && !(ay >= 25 && Math.abs(e.velocityY) >= 500)) return;
         if (dy > 0 && b.ust) git(k.ust); else if (dy < 0 && b.alt) git(k.alt);
         return;
       }
-      if (Math.abs(dx) < 70 || Math.abs(dx) < Math.abs(dy) * 1.8) return;
+      if (ax < ay * 1.2 || (ax < 50 && !(ax >= 20 && Math.abs(e.velocityX) >= 400))) return;
       if (dx < 0 && k.sol) git(k.sol); else if (dx > 0 && k.sag) git(k.sag);
     },
   });
