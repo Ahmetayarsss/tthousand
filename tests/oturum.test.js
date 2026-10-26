@@ -118,6 +118,28 @@ t("deste: arkadaki kartlar sıradakiler", () => {
 // ---- çok anlamlı kelimeler ----
 const COK = Object.keys(BUL).find((k) => ANLAM(k) === 3), IKI = Object.keys(BUL).find((k) => ANLAM(k) === 2);
 
+t("anlam kartları yan yana gelmez (yalnız o kelime kaldıysa gelir), sıra rastgele", () => {
+  const yanYana = (l) => l.some((id, j) => j > 0 && O.kartCoz(id).k === O.kartCoz(l[j - 1]).k);
+  const kelimeler = [[COK + "#0", COK + "#1", COK + "#2"], [IKI + "#0", IKI + "#1"], ["a"], ["b"], ["c"]];
+  const goruldu = new Set();
+  for (let i = 0; i < 200; i++) {
+    const l = O.dagit(S, kelimeler);
+    assert.strictEqual(l.length, 8);
+    assert.deepStrictEqual(l.slice().sort(), [].concat(...kelimeler).sort());
+    assert.ok(!yanYana(l), l.join(" "));
+    goruldu.add(l.join(" "));
+  }
+  assert.ok(goruldu.size > 20, "sıra rastgele");
+  assert.deepStrictEqual(O.dagit(S, [[IKI + "#0", IKI + "#1"]]).sort(), [IKI + "#0", IKI + "#1"]);
+  S.setListSize(60);
+  for (let i = 0; i < 20; i++) {
+    mem.ox3000_exam_batch_v1 = JSON.stringify([COK, IKI]); S._reload();
+    assert.ok(!yanYana(O.sinavKur(S, ANLAM).liste));
+  }
+  const tt = O.testKur(S, ANLAM);
+  assert.ok(!yanYana([tt.cur, ...tt.kuyruk]));
+});
+
 t("anlam kartları: her anlam ayrı kart, hep Türkçeden İngilizceye; test hepsini sorar", () => {
   const o = { mod: "sinav", yon: {} };
   assert.deepStrictEqual(O.kartCoz(COK + "#2"), { k: COK, i: 2 });

@@ -29,13 +29,34 @@ function kartlar(SRS, k, anlamSay, hepsi) {
   return ii.map((i) => kartId(k, i));
 }
 
+function dagit(SRS, kelimeKartlari) {
+  let l = [];
+  for (let n = 0; n < 30; n++) {
+    l = dagitBir(SRS, kelimeKartlari);
+    if (!l.some((id, j) => j > 0 && kartCoz(id).k === kartCoz(l[j - 1]).k)) break;
+  }
+  return l;
+}
+function dagitBir(SRS, kelimeKartlari) {
+  const out = [], digerleri = [];
+  kelimeKartlari.forEach((ids) => { const a = SRS.shuffle(ids.slice()); out.push(a[0]); a.slice(1).forEach((id) => digerleri.push(id)); });
+  SRS.shuffle(digerleri).forEach((id) => {
+    const k = kartCoz(id).k, yer = [];
+    for (let j = 0; j <= out.length; j++) {
+      if ((j === 0 || kartCoz(out[j - 1]).k !== k) && (j === out.length || kartCoz(out[j]).k !== k)) yer.push(j);
+    }
+    out.splice(yer.length ? yer[Math.floor(Math.random() * yer.length)] : out.length, 0, id);
+  });
+  return out;
+}
+
 function testKur(SRS, anlamSay) {
-  const sira = SRS.shuffle([].concat(...SRS.newList(SRS.listSize()).map((k) => kartlar(SRS, k, anlamSay, true))));
+  const sira = dagit(SRS, SRS.shuffle(SRS.newList(SRS.listSize())).map((k) => kartlar(SRS, k, anlamSay, true)));
   return { mod: "test", cur: sira[0] || null, kuyruk: sira.slice(1), toplam: sira.length, kelime: kelimeSayisi(sira), yon: {} };
 }
 
 function sinavKur(SRS, anlamSay) {
-  const q = SRS.examQueue(), ac = (ks) => [].concat(...ks.map((k) => kartlar(SRS, k, anlamSay, false)));
+  const q = SRS.examQueue(), ac = (ks) => dagit(SRS, ks.map((k) => kartlar(SRS, k, anlamSay, false)));
   const tekrar = ac(q.reviews), liste = tekrar.concat(ac(q.news));
   const nYazili = liste.length ? Math.ceil(liste.length / 10) : 0;
   return {
@@ -138,4 +159,4 @@ function baskaKarsilik(SRS, dizin, anlam, w, yazilan) {
   return null;
 }
 
-module.exports = { OTURUM_ANAHTARI, kartId, kartCoz, esAnlamDizini, baskaKarsilik, testKur, sinavKur, yon, bak, yaziliMi, testCevap, sinavCevap, oran, kalan, sayac, testSonu, sinavSonu };
+module.exports = { OTURUM_ANAHTARI, kartId, kartCoz, dagit, esAnlamDizini, baskaKarsilik, testKur, sinavKur, yon, bak, yaziliMi, testCevap, sinavCevap, oran, kalan, sayac, testSonu, sinavSonu };
