@@ -114,6 +114,8 @@ export default function Kartlar() {
   function ustHazir() {
     D.side = 0; D.acik = false; D.ustYuz = "on"; D.tPrompt = performance.now();
     yaziliKur();
+    D.hazir = null;
+    if (cur()) setYakala({ k: cur(), nesil: D.nesil, once: true });
   }
   function desteKur() {
     const y = [];
@@ -156,32 +158,43 @@ export default function Kartlar() {
   function ac(rx) {
     if (D.side === 1 || D.busy || !cur()) return;
     D.side = 1;
-    setYakala({ k: cur(), s: rx >= 0.5 ? -1 : 1, nesil: D.nesil });
+    const k = cur(), s = rx >= 0.5 ? -1 : 1, h = D.hazir;
+    if (h && h.k === k && h.nesil === D.nesil && h.t === t) cevir({ k, s, nesil: D.nesil }, h);
+    else setYakala({ k, s, nesil: D.nesil });
   }
   const acildi = useCallback((nesil) => {
+    D.hazir = null;
     setYakala(null); setGizliUst(false);
     if (nesil !== D.nesil) return;   // bu arada yeni Test/Sınav başladı
     D.ustYuz = "arka"; D.acik = true; ciz();
   }, [D, ciz]);
-  // Yakalanacak yüzler çizildikten sonra katman oynar.
+  const cevir = useCallback(async (y, hazir, iptalMi = () => false) => {
+    const [kok, deste] = await Promise.all([olc(kokRef), olc(desteRef)]);
+    if (iptalMi()) return;
+    if (!cevirRef.current || !kok || !deste) { acildi(y.nesil); return; }
+    cevirRef.current.oynat({
+      onRef: onYakRef, arkaRef: arkaYakRef, hazir, s: y.s,
+      kart: { x: deste.x - kok.x, y: deste.y - kok.y, w: deste.w, h: deste.h },
+      yakalandi: () => setYakala((x) => (x && !x.once ? null : x)),
+      ilkKare: () => setGizliUst(true),
+      bitti: () => acildi(y.nesil),
+    });
+  }, [acildi]);
+  // Yakalanacak yüzler çizildikten sonra: kart üste gelince önceden yakalanır, açılışta yakalanmamışsa o an.
   useEffect(() => {
     if (!yakala) return undefined;
     let iptal = false;
     const r = requestAnimationFrame(() => requestAnimationFrame(async () => {
       if (iptal) return;
-      const [kok, deste] = await Promise.all([olc(kokRef), olc(desteRef)]);
+      if (!yakala.once) { cevir(yakala, null, () => iptal); return; }
+      const h = cevirRef.current ? await cevirRef.current.hazirla(onYakRef, arkaYakRef) : null;
       if (iptal) return;
-      if (!cevirRef.current || !kok || !deste) { acildi(yakala.nesil); return; }
-      cevirRef.current.oynat({
-        onRef: onYakRef, arkaRef: arkaYakRef, s: yakala.s,
-        kart: { x: deste.x - kok.x, y: deste.y - kok.y, w: deste.w, h: deste.h },
-        yakalandi: () => setYakala(null),
-        ilkKare: () => setGizliUst(true),
-        bitti: () => acildi(yakala.nesil),
-      });
+      if (h && yakala.k === cur() && yakala.nesil === D.nesil && D.side === 0) D.hazir = { ...h, k: yakala.k, nesil: yakala.nesil, t };
+      setYakala((x) => (x === yakala ? null : x));
     }));
     return () => { iptal = true; cancelAnimationFrame(r); };
-  }, [yakala, acildi]);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [yakala, cevir]);
 
   // ---- cevap ----
   function ilerle(yon) {

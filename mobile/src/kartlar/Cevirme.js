@@ -5,8 +5,9 @@
  * Katman bütün ekranın üstünde çizer ama kartın 64 px çevresiyle kırpılır;
  * dokunuşları geçirir. ref.iptal(): süren çevirmeyi bırakır, bitti çağrılmaz (ör. sekme değişip yeni Test başlayınca).
  *
- * ref.oynat({ onRef, arkaRef, kart: {x, y, w, h}, s, yakalandi, ilkKare, bitti }):
- *   onRef/arkaRef: yakalanacak yüzler (çevresinde PAY kadar saydam pay), kart: katmandaki yeri,
+ * ref.hazirla(onRef, arkaRef) → { on, arka } ya da null: yüzler önceden yakalanır.
+ * ref.oynat({ onRef, arkaRef, hazir, kart: {x, y, w, h}, s, yakalandi, ilkKare, bitti }):
+ *   onRef/arkaRef: yakalanacak yüzler (çevresinde PAY kadar saydam pay; hazir verildiyse yakalanmaz), kart: katmandaki yeri,
  *   s: -1 sol kenar menteşe (sağa basıldı), 1 sağ kenar. yakalandi(): yüzler alındı (yakalama kopyaları kaldırılabilir),
  *   ilkKare(): katman ilk kez çizdi (asıl kart gizlenebilir).
  *   bitti(ok): ok=false → yakalanamadı (cevap hemen gösterilir).
@@ -28,11 +29,18 @@ export default forwardRef(function Cevirme(_, ref) {
   const surum = useRef(0);   // iptal edilen çevirmenin geç gelen adımları yok sayılır
 
   useImperativeHandle(ref, () => ({
-    async oynat({ onRef, arkaRef, kart, s, yakalandi, ilkKare, bitti }) {
+    async hazirla(onRef, arkaRef) {
+      try { const [on, arka] = await Promise.all([yuzYakala(onRef), yuzYakala(arkaRef)]); return on && arka ? { on, arka } : null; }
+      catch (e) { return null; }
+    },
+    async oynat({ onRef, arkaRef, hazir, kart, s, yakalandi, ilkKare, bitti }) {
       const benim = ++surum.current;
       let on = null, arka = null;
-      try { [on, arka] = await Promise.all([yuzYakala(onRef), yuzYakala(arkaRef)]); }
-      catch (e) { on = null; }
+      if (hazir) ({ on, arka } = hazir);
+      else {
+        try { [on, arka] = await Promise.all([yuzYakala(onRef), yuzYakala(arkaRef)]); }
+        catch (e) { on = null; }
+      }
       if (benim !== surum.current) return;
       yakalandi();
       if (!on || !arka) { bitti(false); return; }
