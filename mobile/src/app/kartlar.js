@@ -115,7 +115,6 @@ export default function Kartlar() {
     D.side = 0; D.acik = false; D.ustYuz = "on"; D.tPrompt = performance.now();
     yaziliKur();
     D.hazir = null; D.hazirSoz = null;
-    if (cur()) setYakala({ k: cur(), nesil: D.nesil, once: true });
   }
   function desteKur() {
     const y = [];
