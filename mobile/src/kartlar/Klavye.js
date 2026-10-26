@@ -25,15 +25,18 @@ export function Kutu({ deger, ipucu, isaret, t }) {
   const on = isaret == null;
   const cizgi = on ? t.kutuEtkin : isaret ? t.green : t.red;
   const zemin = on ? t.kutu : isaret ? t.goodBg : t.badBg;
+  const [alan, setAlan] = useState(0), [yazi, setYazi] = useState(0);
   return (
     <View style={s.kutular}>
       <View accessibilityLabel={ipucu} style={[s.kutu, { borderColor: cizgi, backgroundColor: zemin }, on && { boxShadow: "0 0 0 3px rgba(201,162,39,.25)" }]}>
         {deger ? (
-          // Sağa yaslı geniş satır: kutuya sığmayan baş kısım soldan kırpılır, son harfler ve imleç görünür.
-          <View style={s.yaziAlani}>
-            <View style={s.yaziSatiri}>
-              <Text numberOfLines={1} style={[s.kutuYazi, { color: t.ink }]}>{deger.replace(/ /g, "\u00a0")}</Text>
-              {on ? <Imlec renk={t.imlec} /> : null}
+          // Sola yaslı; kutuya sığmazsa sağa yaslanır: baş kısım soldan kırpılır, son harfler ve imleç görünür.
+          <View style={s.yaziAlani} onLayout={(e) => setAlan(e.nativeEvent.layout.width)}>
+            <View style={[s.yaziSatiri, alan && yazi > alan ? s.sagaYasli : s.solaYasli]}>
+              <View style={s.yaziIci} onLayout={(e) => setYazi(e.nativeEvent.layout.width)}>
+                <Text numberOfLines={1} style={[s.kutuYazi, { color: t.ink }]}>{deger.replace(/ /g, "\u00a0")}</Text>
+                {on ? <Imlec renk={t.imlec} /> : null}
+              </View>
             </View>
           </View>
         ) : (
@@ -90,7 +93,10 @@ const s = StyleSheet.create({
   kutular: { flexDirection: "row", gap: 6, paddingHorizontal: 3, paddingBottom: 9 },
   kutu: { flex: 1, minWidth: 0, height: 46, borderWidth: 2, borderRadius: 12, paddingHorizontal: 11, flexDirection: "row", alignItems: "center", overflow: "hidden" },
   yaziAlani: { flex: 1, height: "100%", overflow: "hidden" },
-  yaziSatiri: { position: "absolute", right: 0, top: 0, bottom: 0, width: 2000, flexDirection: "row", alignItems: "center", justifyContent: "flex-end" },
+  yaziSatiri: { position: "absolute", top: 0, bottom: 0, width: 2000, flexDirection: "row", alignItems: "center" },
+  solaYasli: { left: 0, justifyContent: "flex-start" },
+  sagaYasli: { right: 0, justifyContent: "flex-end" },
+  yaziIci: { flexDirection: "row", alignItems: "center" },
   kutuYazi: { fontSize: 17, fontWeight: "700" },
   kutuIpucu: { fontSize: 15, fontWeight: "600", flexShrink: 1 },
   imlec: { width: 2, height: 22, marginLeft: 1 },
