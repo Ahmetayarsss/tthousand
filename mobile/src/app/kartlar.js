@@ -80,6 +80,7 @@ export default function Kartlar() {
   const cur = () => D.o && D.o.cur;
   const yaziliMi = () => !!D.o && O.yaziliMi(D.o, D.o.cur);
   const sinavda = () => D.mod === "sinav" && !!cur() && !sonucRef.current;
+  const sinavBasladi = () => sinavda() && (D.o.i > 0 || D.side !== 0);
 
   // ---- bilgi balonu ----
   const toastZaman = useRef(0), toastGor = useRef(new Animated.Value(0)).current;
@@ -284,7 +285,7 @@ export default function Kartlar() {
   function modSec(m) {
     if (m === "sinav" && D.mod === "sinav" && sinavda()) return;   // zaten sınavda: baştan başlatma
     const gec = () => { D.mod = m; baslat(); };
-    if (m === "test" && sinavda()) cikisOnayi("Teste geçiyorsun.", "Teste geç", gec); else gec();
+    if (m === "test" && sinavBasladi()) cikisOnayi("Teste geçiyorsun.", "Teste geç", gec); else gec();
   }
 
   useFocusEffect(useCallback(() => {
@@ -295,6 +296,7 @@ export default function Kartlar() {
     const sok = cikisBekcisi((gec, hedef) => {
       if (!sinavda()) return false;
       if (hedef.ad === "kartlar" && hedef.mod === "sinav") return true;
+      if (!sinavBasladi()) return false;
       cikisOnayi("Sınavdan çıkıyorsun.", "Çık", gec);
       return true;
     });
@@ -302,7 +304,7 @@ export default function Kartlar() {
     const dinle = kartlarDinle(() => { const m = kartlarModu(); if (m && (m !== D.mod || !sinavda())) { D.mod = m; baslat(); } });
     const geri = BackHandler.addEventListener("hardwareBackPress", () => {
       if (ayrilmaRef.current) { setAyrilma(null); return true; }
-      if (!sinavda()) return false;
+      if (!sinavBasladi()) return false;
       cikisOnayi("Sınavdan çıkıyorsun.", "Çık", geriGit);
       return true;
     });
@@ -345,7 +347,7 @@ export default function Kartlar() {
             <View style={[s.cubuk, { backgroundColor: t.kartLine }]}><View style={{ width: oran * 100 + "%", height: "100%", backgroundColor: t.green }} /></View>
             <Text style={[s.sayac, { color: t.ink }]}>{sayacMetni}</Text>
             {sinavMi && !sonuc && ust ? (
-              <Pressable onPress={() => { if (!D.busy) cikisOnayi("Sınavı bitiriyorsun.", "Bitir", () => { if (D.mod === "sinav") sinavBitti(); }); }}
+              <Pressable onPress={() => { if (D.busy) return; if (sinavBasladi()) cikisOnayi("Sınavı bitiriyorsun.", "Bitir", () => { if (D.mod === "sinav") sinavBitti(); }); else sinavBitti(); }}
                 style={[s.bitir, { backgroundColor: t.solid }]} accessibilityRole="button">
                 <Text style={[s.bitirYazi, { color: t.onSolid }]}>Bitir</Text>
               </Pressable>
